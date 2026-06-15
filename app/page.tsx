@@ -10,7 +10,7 @@ import {
 
 const GITHUB_URL = 'https://github.com/sinhgiang/wispra'
 const DOWNLOAD_WIN = 'https://github.com/sinhgiang/wispra/releases/download/v0.2.1/Wispra-Setup-0.2.1.exe'
-const DOWNLOAD_MAC = 'https://github.com/sinhgiang/wispra/releases/download/v0.2.1/Wispra-0.2.1-mac.dmg'
+const DOWNLOAD_MAC = 'https://github.com/sinhgiang/wispra/releases/download/v0.2.1/Wispra-0.2.1-arm64.dmg'
 const VERSION = 'v0.2.1'
 
 const DEMO_PHRASES = [
@@ -530,7 +530,7 @@ export default function Page() {
             <div className="w-6 h-6 rounded-md bg-brand flex items-center justify-center">
               <MicIcon className="w-3.5 h-3.5 text-white" />
             </div>
-            <span className="text-sm text-text-muted">Wispra · Built by SinhGiang</span>
+            <span className="text-sm text-text-muted">Wispra</span>
           </div>
           <div className="flex items-center gap-6 text-sm text-text-muted">
             {[['GitHub', GITHUB_URL], ['Changelog', `${GITHUB_URL}/releases`], ['Support', `${GITHUB_URL}/issues`]].map(([label, href]) => (
