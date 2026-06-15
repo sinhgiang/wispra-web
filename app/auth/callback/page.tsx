@@ -13,21 +13,26 @@ export default function AuthCallbackPage(): React.JSX.Element {
       return
     }
 
-    // Forward tokens to the Electron app via wispra:// custom protocol.
-    // Use an anchor click so the browser does NOT enter a navigation/loading state.
-    const a = document.createElement('a')
-    a.href = `wispra://auth${hash}`
-    a.style.display = 'none'
-    document.body.appendChild(a)
-    a.click()
-    document.body.removeChild(a)
+    // Open a tiny popup that fires the wispra:// protocol and immediately closes itself.
+    // Popups opened by window.open() ARE allowed to call window.close() — unlike regular tabs.
+    const popup = window.open(
+      `/auth/relay${hash}`,
+      'wispra_auth',
+      'width=1,height=1,left=-100,top=-100'
+    )
 
-    // Show success immediately
+    // Show success state on this page
     setStatus('success')
 
-    // Attempt to close this tab. Works when Chrome opened this as a new window
-    // (e.g. no existing Chrome window was open). If blocked, user sees the success page.
-    setTimeout(() => window.close(), 800)
+    // If popup was blocked, fall back to anchor click
+    if (!popup) {
+      const a = document.createElement('a')
+      a.href = `wispra://auth${hash}`
+      a.style.display = 'none'
+      document.body.appendChild(a)
+      a.click()
+      document.body.removeChild(a)
+    }
   }, [])
 
   return (
@@ -50,7 +55,7 @@ export default function AuthCallbackPage(): React.JSX.Element {
 
       {status === 'success' && (
         <div style={{ textAlign: 'center', display: 'flex', flexDirection: 'column', gap: '8px' }}>
-          <p style={{ fontSize: '20px', fontWeight: 700, margin: 0 }}>✓ You&apos;re signed in!</p>
+          <p style={{ fontSize: '22px', fontWeight: 700, margin: 0 }}>✓ You&apos;re signed in!</p>
           <p style={{ fontSize: '14px', color: '#666', margin: 0 }}>
             You can close this tab and return to Wispra.
           </p>
@@ -58,7 +63,7 @@ export default function AuthCallbackPage(): React.JSX.Element {
             onClick={() => window.close()}
             style={{
               marginTop: '8px',
-              padding: '8px 20px',
+              padding: '9px 22px',
               background: '#4F6EF7',
               color: 'white',
               border: 'none',
