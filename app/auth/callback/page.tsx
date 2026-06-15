@@ -13,15 +13,18 @@ export default function AuthCallbackPage(): React.JSX.Element {
       return
     }
 
-    // Hand off tokens to the Electron app via the wispra:// custom protocol
-    window.location.href = `wispra://auth${hash}`
+    // Use a hidden anchor click instead of window.location.href
+    // so the browser does NOT show a loading/navigation state
+    const a = document.createElement('a')
+    a.href = `wispra://auth${hash}`
+    a.style.display = 'none'
+    document.body.appendChild(a)
+    a.click()
+    document.body.removeChild(a)
 
-    // Attempt to close this browser tab after the redirect is fired
-    setTimeout(() => {
-      window.close()
-      // If close was blocked (tab not opened by script), show fallback
-      setStatus('success')
-    }, 600)
+    // Show success right away, then attempt to close the tab
+    setStatus('success')
+    setTimeout(() => window.close(), 1200)
   }, [])
 
   return (
