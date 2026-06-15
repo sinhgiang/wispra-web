@@ -9,9 +9,9 @@ import {
 } from './icons'
 
 const GITHUB_URL = 'https://github.com/sinhgiang/wispra'
-const DOWNLOAD_WIN = 'https://github.com/sinhgiang/wispra/releases/download/v0.2.1/Wispra-Setup-0.2.1.exe'
-const DOWNLOAD_MAC = 'https://github.com/sinhgiang/wispra/releases/download/v0.2.1/Wispra-0.2.1-arm64.dmg'
-const VERSION = 'v0.2.1'
+const DOWNLOAD_WIN = 'https://github.com/sinhgiang/wispra/releases/download/v0.2.2/Wispra-Setup-0.2.2.exe'
+const DOWNLOAD_MAC = 'https://github.com/sinhgiang/wispra/releases/download/v0.2.2/Wispra-0.2.2-arm64.dmg'
+const VERSION = 'v0.2.2'
 
 const DEMO_PHRASES = [
   'Schedule a meeting with the team for Monday at 10 AM.',
