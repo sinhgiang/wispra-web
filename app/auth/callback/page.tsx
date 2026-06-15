@@ -13,8 +13,8 @@ export default function AuthCallbackPage(): React.JSX.Element {
       return
     }
 
-    // Use a hidden anchor click instead of window.location.href
-    // so the browser does NOT show a loading/navigation state
+    // Forward tokens to the Electron app via wispra:// custom protocol.
+    // Use an anchor click so the browser does NOT enter a navigation/loading state.
     const a = document.createElement('a')
     a.href = `wispra://auth${hash}`
     a.style.display = 'none'
@@ -22,9 +22,12 @@ export default function AuthCallbackPage(): React.JSX.Element {
     a.click()
     document.body.removeChild(a)
 
-    // Show success right away, then attempt to close the tab
+    // Show success immediately
     setStatus('success')
-    setTimeout(() => window.close(), 1200)
+
+    // Attempt to close this tab. Works when Chrome opened this as a new window
+    // (e.g. no existing Chrome window was open). If blocked, user sees the success page.
+    setTimeout(() => window.close(), 800)
   }, [])
 
   return (
@@ -34,54 +37,64 @@ export default function AuthCallbackPage(): React.JSX.Element {
       flexDirection: 'column',
       alignItems: 'center',
       justifyContent: 'center',
-      fontFamily: 'Inter, system-ui, sans-serif',
+      fontFamily: "'Inter', system-ui, sans-serif",
       background: '#07070F',
       color: '#EEEEF5',
-      gap: '16px',
+      gap: '18px',
     }}>
+      <Logo />
+
       {status === 'loading' && (
-        <>
-          <WispraLogo />
-          <p style={{ fontSize: '16px', opacity: 0.7, margin: 0 }}>Signing you in…</p>
-        </>
+        <p style={{ fontSize: '15px', color: '#888', margin: 0 }}>Signing you in…</p>
       )}
 
       {status === 'success' && (
-        <>
-          <WispraLogo />
-          <div style={{ textAlign: 'center' }}>
-            <p style={{ fontSize: '18px', fontWeight: 600, margin: '0 0 6px' }}>You&apos;re signed in!</p>
-            <p style={{ fontSize: '14px', opacity: 0.6, margin: 0 }}>
-              You can close this tab and return to Wispra.
-            </p>
-          </div>
-        </>
+        <div style={{ textAlign: 'center', display: 'flex', flexDirection: 'column', gap: '8px' }}>
+          <p style={{ fontSize: '20px', fontWeight: 700, margin: 0 }}>✓ You&apos;re signed in!</p>
+          <p style={{ fontSize: '14px', color: '#666', margin: 0 }}>
+            You can close this tab and return to Wispra.
+          </p>
+          <button
+            onClick={() => window.close()}
+            style={{
+              marginTop: '8px',
+              padding: '8px 20px',
+              background: '#4F6EF7',
+              color: 'white',
+              border: 'none',
+              borderRadius: '8px',
+              fontSize: '14px',
+              cursor: 'pointer',
+              fontWeight: 500,
+            }}
+          >
+            Close this tab
+          </button>
+        </div>
       )}
 
       {status === 'error' && (
-        <>
-          <WispraLogo />
-          <div style={{ textAlign: 'center' }}>
-            <p style={{ fontSize: '18px', fontWeight: 600, margin: '0 0 6px', color: '#f87171' }}>
-              Sign-in failed
-            </p>
-            <p style={{ fontSize: '14px', opacity: 0.6, margin: 0 }}>
-              Please close this tab and try again from Wispra.
-            </p>
-          </div>
-        </>
+        <div style={{ textAlign: 'center', display: 'flex', flexDirection: 'column', gap: '8px' }}>
+          <p style={{ fontSize: '18px', fontWeight: 600, margin: 0, color: '#f87171' }}>
+            Sign-in failed
+          </p>
+          <p style={{ fontSize: '14px', color: '#666', margin: 0 }}>
+            Please close this tab and try again from Wispra.
+          </p>
+        </div>
       )}
     </div>
   )
 }
 
-function WispraLogo(): React.JSX.Element {
+function Logo(): React.JSX.Element {
   return (
-    <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '8px' }}>
+    <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
       <div style={{
-        width: 40, height: 40, borderRadius: 10,
+        width: 44, height: 44, borderRadius: 11,
         background: '#4F6EF7',
         display: 'flex', alignItems: 'center', justifyContent: 'center',
+        flexShrink: 0,
       }}>
         <svg width="20" height="22" viewBox="0 0 14 16" fill="none">
           <rect x="4" y="0.5" width="6" height="9" rx="3" fill="white" />
@@ -91,7 +104,7 @@ function WispraLogo(): React.JSX.Element {
           <line x1="4" y1="15.5" x2="10" y2="15.5" stroke="white" strokeWidth="1.5" strokeLinecap="round" />
         </svg>
       </div>
-      <span style={{ fontSize: '20px', fontWeight: 700, letterSpacing: '-0.3px' }}>Wispra</span>
+      <span style={{ fontSize: '22px', fontWeight: 700, letterSpacing: '-0.3px' }}>Wispra</span>
     </div>
   )
 }
