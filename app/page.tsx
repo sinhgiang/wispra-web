@@ -25,7 +25,7 @@ const FEATURES = [
   {
     Icon: GlobeIcon,
     title: '95+ languages, auto-detected',
-    desc: 'Speak in English, Vietnamese, Spanish, Japanese — or switch mid-sentence. Wispra detects the language automatically. No toggles.',
+    desc: 'Speak in English, Spanish, French, Japanese, or dozens more — or switch mid-sentence. Wispra detects the language automatically. No toggles.',
   },
   {
     Icon: MicIcon,
@@ -49,36 +49,60 @@ const FEATURES = [
   },
 ]
 
-const FAQS = [
+const WHO_ITS_FOR = [
   {
-    q: 'Do I need to create an account?',
-    a: 'No account needed. Just download Wispra, add your free Groq API key in Settings, and start dictating. Takes under 60 seconds to set up.',
+    role: 'Professionals & managers',
+    pain: 'Emails, meeting notes, and Slack replies eat your day.',
+    outcome: 'Dictate in plain speech — Wispra types polished sentences directly into whatever is on screen. What took 10 minutes now takes 90 seconds.',
+    accent: 'from-brand/10 to-transparent border-brand/20',
+    color: 'text-brand',
   },
   {
-    q: 'Is the Groq API key free?',
-    a: 'Yes. Groq offers a generous free tier that covers hundreds of dictation minutes per day for most users — more than enough for daily use. No credit card required.',
+    role: 'Writers & content creators',
+    pain: 'Your best ideas arrive faster than your fingers can type.',
+    outcome: 'Speak your first draft at your natural thinking pace. AI cleans it up on the way out. You see finished sentences, not raw transcription.',
+    accent: 'from-purple-500/10 to-transparent border-purple-500/20',
+    color: 'text-purple-400',
+  },
+  {
+    role: 'Developers & power users',
+    pain: 'Switching windows to dictate kills your flow state.',
+    outcome: 'One hotkey from any app — VS Code, terminal, browser. Text lands where your cursor is. Clipboard untouched. Focus preserved.',
+    accent: 'from-emerald-500/10 to-transparent border-emerald-500/20',
+    color: 'text-emerald-400',
+  },
+]
+
+const FAQS = [
+  {
+    q: 'Is Wispra really free?',
+    a: 'Yes. Wispra is free to download and use. It runs on Groq\'s transcription API, which has a generous free tier — enough for hundreds of dictation minutes per day. You sign up for a free Groq account at groq.com (takes 30 seconds, no credit card), copy your API key into Wispra\'s Settings, and you\'re done.',
+  },
+  {
+    q: 'What is a Groq API key and why do I need one?',
+    a: 'Groq is the AI service that converts your speech to text — it\'s what makes Wispra fast and accurate. Your API key is like a personal password that lets Wispra use Groq on your behalf. It\'s free. Getting one takes 30 seconds at groq.com. This also means your audio never passes through Wispra\'s servers — it goes directly to Groq and back.',
   },
   {
     q: 'Which languages does it support?',
-    a: 'Wispra supports 95+ languages through Whisper Large v3 Turbo. English, Vietnamese, Spanish, French, German, Japanese, Chinese, Korean, and many more — all auto-detected.',
+    a: 'Wispra supports 95+ languages through Whisper Large v3 Turbo. English, Spanish, French, German, Japanese, Chinese, Korean, Portuguese, and many more — all auto-detected. Just speak; Wispra figures out the language.',
   },
   {
     q: 'Does it work with any app?',
-    a: 'Yes. Wispra works at the OS level — it injects text directly wherever your cursor is. Gmail, Slack, VS Code, Word, Notion, web browsers, terminal — any text field.',
+    a: 'Yes. Wispra works at the OS level — it injects text directly wherever your cursor is. Gmail, Slack, VS Code, Word, Notion, web browsers, terminal — any text field on Windows or macOS.',
   },
   {
     q: 'Is my voice data stored anywhere?',
-    a: 'No. Your audio is sent to Groq for transcription and immediately discarded. Wispra never records, stores, or sees your audio or text. Zero data retention.',
+    a: 'No. Your audio is sent to Groq for transcription and immediately discarded. Wispra never records, stores, or sees your audio or text. Zero data retention — by design.',
   },
 ]
 
 const COMPARISON = [
-  { feature: 'Price', wispra: 'Free (BYOK)', wispr: '$15/month', superwhisper: '$8.49/month' },
-  { feature: 'Windows support', wispra: '✓ Native', wispr: '✓ (buggy, slow)', superwhisper: '✗ Mac only' },
-  { feature: 'Privacy', wispra: '✓ No data stored', wispr: '⚠ Privacy scandal (Nov 2025)', superwhisper: '✓ Local option' },
+  { feature: 'Price', wispra: 'Free (your own API key)', wispr: '$15/month', superwhisper: '$8.49/month' },
+  { feature: 'Windows support', wispra: '✓ Native, fast', wispr: '⚠ Slow to start (~8s)', superwhisper: '✗ Mac only' },
+  { feature: 'Data privacy', wispra: '✓ Audio never stored', wispr: '⚠ Privacy incident (2025)', superwhisper: '✓ Local option' },
   { feature: '95+ languages', wispra: '✓ Auto-detect', wispr: '✓', superwhisper: '✓' },
-  { feature: 'AI cleanup', wispra: '✓ Free', wispr: '✓', superwhisper: '✓' },
-  { feature: 'Startup speed', wispra: '< 1s', wispr: '~8s on Windows', superwhisper: '< 1s (Mac only)' },
+  { feature: 'AI cleanup', wispra: '✓ Included free', wispr: '✓', superwhisper: '✓ Paid tier' },
+  { feature: 'No account needed', wispra: '✓', wispr: '✗ Account required', superwhisper: '✗ Account required' },
 ]
 
 function DemoCard() {
@@ -198,6 +222,7 @@ function AppleIcon({ className }: { className?: string }) {
   )
 }
 
+// FIX 4: Nav has NO links — only logo + Download button
 function Nav() {
   const [scrolled, setScrolled] = useState(false)
   useEffect(() => {
@@ -215,13 +240,10 @@ function Nav() {
           </div>
           <span className="font-semibold text-text-primary text-lg tracking-tight">Wispra</span>
         </div>
-        <div className="flex items-center gap-3">
-          <a href="#faq" className="hidden sm:block text-sm text-text-muted hover:text-text-primary transition-colors">FAQ</a>
-          <a href={DOWNLOAD_WIN}
-            className="flex items-center gap-1.5 bg-brand hover:bg-brand-dark text-white text-sm font-semibold px-4 py-2 rounded-lg transition-colors">
-            Download Free
-          </a>
-        </div>
+        <a href={DOWNLOAD_WIN}
+          className="flex items-center gap-1.5 bg-brand hover:bg-brand-dark text-white text-sm font-semibold px-4 py-2 rounded-lg transition-colors">
+          Download Free
+        </a>
       </div>
     </nav>
   )
@@ -243,10 +265,10 @@ export default function Page() {
 
         <div className="relative max-w-6xl mx-auto px-6 py-24 grid lg:grid-cols-2 gap-16 items-center">
           <div>
-            {/* eyebrow */}
+            {/* eyebrow — FIX 2: no mention of "API key" here */}
             <div className="inline-flex items-center gap-2 text-xs font-semibold text-brand bg-brand/10 border border-brand/20 px-3 py-1.5 rounded-full mb-6">
               <span className="w-1.5 h-1.5 bg-brand rounded-full animate-pulse" />
-              Free · Windows &amp; Mac · 95+ languages
+              Free to use · Windows &amp; Mac · 95+ languages
             </div>
 
             {/* headline */}
@@ -256,11 +278,10 @@ export default function Page() {
               <span className="gradient-text">to slow typing.</span>
             </h1>
 
-            {/* subheadline */}
+            {/* FIX 5: subheadline shortened to 2 sentences */}
             <p className="text-lg text-text-muted leading-relaxed mb-8 max-w-lg">
-              Press one hotkey from any app. Speak. Wispra transcribes, polishes with AI,
-              and types your words — in Gmail, Slack, VS Code, or anywhere on screen.
-              Done in under 5 seconds.
+              Press one hotkey. Speak. Wispra types your words — polished and punctuated —
+              into any app on screen. Done in under 5 seconds.
             </p>
 
             {/* CTAs */}
@@ -279,11 +300,7 @@ export default function Page() {
 
             {/* social proof strip — directly below CTA */}
             <div className="flex flex-wrap items-center gap-x-5 gap-y-2 text-sm text-text-muted">
-              <span className="flex items-center gap-1">
-                <span className="text-yellow-400 text-base">★★★★★</span>
-                <span className="text-text-muted ml-1">4.8 / 5</span>
-              </span>
-              <span className="flex items-center gap-1.5"><CheckIcon /> Free — no credit card</span>
+              <span className="flex items-center gap-1.5"><CheckIcon /> No subscription — ever</span>
               <span className="flex items-center gap-1.5"><CheckIcon /> No account needed</span>
               <span className="flex items-center gap-1.5"><CheckIcon /> {VERSION} · Auto-updates</span>
             </div>
@@ -300,13 +317,26 @@ export default function Page() {
         <div className="max-w-6xl mx-auto px-6">
           <div className="text-center mb-14">
             <p className="text-xs font-semibold uppercase tracking-widest text-brand mb-3">How it works</p>
-            <h2 className="text-3xl font-bold text-text-primary">Ready in under 60 seconds</h2>
+            <h2 className="text-3xl font-bold text-text-primary">Up and running in 60 seconds</h2>
           </div>
           <div className="grid md:grid-cols-3 gap-8 relative">
             {[
-              { n: '1', title: 'Install — takes 30 seconds', desc: 'Download the Windows or macOS installer. Add your free Groq API key in Settings. One-time setup.' },
-              { n: '2', title: 'Press the hotkey and speak', desc: 'Ctrl+Shift+Space from any app. A floating mic icon appears. Speak naturally in any language.' },
-              { n: '3', title: 'Text appears, polished', desc: 'AI removes filler words, fixes grammar, adds punctuation — and types the result where your cursor is.' },
+              {
+                n: '1',
+                title: 'Download and open Settings',
+                /* FIX 2: explain Groq in plain English */
+                desc: 'Install Wispra, then get a free API key from groq.com — takes 30 seconds, no credit card. Paste it into Wispra\'s Settings. Done.',
+              },
+              {
+                n: '2',
+                title: 'Press the hotkey and speak',
+                desc: 'Ctrl+Shift+Space from any app. A floating mic icon appears near your cursor. Speak naturally in any language.',
+              },
+              {
+                n: '3',
+                title: 'Text appears, already polished',
+                desc: 'AI removes filler words, fixes grammar, adds punctuation — and types the result where your cursor is. In under 5 seconds.',
+              },
             ].map((step, i) => (
               <div key={i} className="relative text-center">
                 {i < 2 && (
@@ -319,6 +349,14 @@ export default function Page() {
                 <p className="text-text-muted text-sm leading-relaxed">{step.desc}</p>
               </div>
             ))}
+          </div>
+          {/* FIX 2: clear CTA for Groq key */}
+          <div className="text-center mt-10">
+            <a href="https://console.groq.com" target="_blank" rel="noopener noreferrer"
+              className="inline-flex items-center gap-1.5 text-sm text-brand hover:underline">
+              Get your free Groq key at console.groq.com →
+            </a>
+            <p className="text-xs text-text-muted mt-1">Free tier · No credit card · 30-second signup</p>
           </div>
         </div>
       </section>
@@ -341,6 +379,25 @@ export default function Page() {
                 </div>
                 <h3 className="text-sm font-semibold text-text-primary mb-2">{f.title}</h3>
                 <p className="text-xs text-text-muted leading-relaxed">{f.desc}</p>
+              </div>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      {/* ── WHO IT'S FOR — FIX 1: replaces fake testimonials ── */}
+      <section className="border-t border-white/5 py-20">
+        <div className="max-w-6xl mx-auto px-6">
+          <div className="text-center mb-12">
+            <p className="text-xs font-semibold uppercase tracking-widest text-brand mb-3">Who it's for</p>
+            <h2 className="text-3xl font-bold text-text-primary">Built for people who write every day</h2>
+          </div>
+          <div className="grid md:grid-cols-3 gap-5">
+            {WHO_ITS_FOR.map((w) => (
+              <div key={w.role} className={`rounded-xl border bg-gradient-to-br p-6 ${w.accent}`}>
+                <p className={`text-xs font-semibold uppercase tracking-widest mb-3 ${w.color}`}>{w.role}</p>
+                <p className="text-base font-semibold text-text-primary mb-3">"{w.pain}"</p>
+                <p className="text-sm text-text-muted leading-relaxed">{w.outcome}</p>
               </div>
             ))}
           </div>
@@ -371,56 +428,13 @@ export default function Page() {
             ))}
           </div>
           <p className="text-xs text-text-muted text-center mt-4">
-            Wispr Flow data: TechCrunch, Nov 2025 · Superwhisper: superwhisper.com, June 2026
+            Wispr Flow: TechCrunch Nov 2025 · Superwhisper: superwhisper.com June 2026
           </p>
         </div>
       </section>
 
-      {/* ── TESTIMONIALS ─────────────────────────────────── */}
-      <section className="border-t border-white/5 py-20">
-        <div className="max-w-6xl mx-auto px-6">
-          <div className="text-center mb-12">
-            <p className="text-xs font-semibold uppercase tracking-widest text-brand mb-3">What users say</p>
-            <h2 className="text-3xl font-bold text-text-primary">Real people. Real results.</h2>
-          </div>
-          <div className="grid md:grid-cols-3 gap-5">
-            {[
-              {
-                quote: "I've tried Wispr Flow and Superwhisper. Wispra is faster on Windows and costs nothing. I dictate every email now.",
-                name: 'Marcus T.',
-                title: 'Product Manager · Berlin',
-              },
-              {
-                quote: "The AI cleanup is what sold me. I speak messy, Wispra types clean. My Slack messages finally make sense on the first try.",
-                name: 'Priya S.',
-                title: 'Software Engineer · London',
-              },
-              {
-                quote: "I write 3,000 words a day for my newsletter. Wispra cut my drafting time in half. The hotkey is muscle memory now.",
-                name: 'James O.',
-                title: 'Content Creator · New York',
-              },
-            ].map((t, i) => (
-              <div key={i} className="glow-card bg-bg-card rounded-xl p-6">
-                <div className="text-yellow-400 text-base mb-4">★★★★★</div>
-                <p className="text-sm text-text-primary leading-relaxed mb-5">"{t.quote}"</p>
-                <div className="flex items-center gap-3">
-                  <div className="w-9 h-9 rounded-full bg-brand/20 border border-brand/30 flex items-center justify-center text-brand font-bold text-sm">
-                    {t.name[0]}
-                  </div>
-                  <div>
-                    <p className="text-sm font-semibold text-text-primary">{t.name}</p>
-                    <p className="text-xs text-text-muted">{t.title}</p>
-                  </div>
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-      </section>
-
       {/* ── FAQ ──────────────────────────────────────────── */}
-      <section id="faq" className="border-t border-white/5 py-20">
+      <section className="border-t border-white/5 py-20">
         <div className="max-w-3xl mx-auto px-6">
           <div className="text-center mb-12">
             <p className="text-xs font-semibold uppercase tracking-widest text-brand mb-3">FAQ</p>
@@ -462,8 +476,7 @@ export default function Page() {
                 Start speaking. Stop typing.
               </h2>
               <p className="text-text-muted mb-8 max-w-md mx-auto text-lg">
-                Free download. Works on Windows and macOS.
-                No account — just add your free Groq key and go.
+                Free download. Works on Windows and macOS. Setup takes 60 seconds.
               </p>
               <div className="flex flex-wrap justify-center gap-4 mb-6">
                 <a href={DOWNLOAD_WIN}
@@ -478,9 +491,9 @@ export default function Page() {
                 </a>
               </div>
               <div className="flex flex-wrap justify-center items-center gap-x-6 gap-y-2 text-sm text-text-muted">
-                <span className="flex items-center gap-1.5"><CheckIcon /> Free Groq API key — no card needed</span>
-                <span className="flex items-center gap-1.5"><CheckIcon /> Setup in 60 seconds</span>
-                <span className="flex items-center gap-1.5"><CheckIcon /> Auto-updates · {VERSION}</span>
+                <span className="flex items-center gap-1.5"><CheckIcon /> No subscription — free Groq key covers daily use</span>
+                <span className="flex items-center gap-1.5"><CheckIcon /> No account needed</span>
+                <span className="flex items-center gap-1.5"><CheckIcon /> {VERSION} · Auto-updates</span>
               </div>
             </div>
           </div>
