@@ -3,9 +3,12 @@ import { validateToken } from '@/lib/supabase-server'
 
 const GROQ_CHAT_URL = 'https://api.groq.com/openai/v1/chat/completions'
 
-// Whitelist of Groq models the Electron client is allowed to request
+// Whitelist of Groq models clients (desktop, mobile) are allowed to request.
+// llama-3.3-70b-versatile was retired by Groq (now 404s) — keep it out of the
+// whitelist so a stale client requesting it falls back to a live default
+// instead of being routed straight to a dead model.
 const ALLOWED_MODELS = new Set([
-  'llama-3.3-70b-versatile',
+  'openai/gpt-oss-120b',
   'llama-3.1-8b-instant',
   'llama3-70b-8192',
   'llama3-8b-8192',
@@ -13,7 +16,7 @@ const ALLOWED_MODELS = new Set([
   'gemma2-9b-it',
 ])
 
-const DEFAULT_MODEL = 'llama-3.3-70b-versatile'
+const DEFAULT_MODEL = 'openai/gpt-oss-120b'
 
 export async function POST(req: NextRequest) {
   // ── Auth ────────────────────────────────────────────────────────────────────
