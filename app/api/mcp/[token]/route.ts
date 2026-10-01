@@ -8,17 +8,18 @@ function hashToken(token: string): string {
   return createHash('sha256').update(token).digest('hex')
 }
 
-type ResolveResult = { ok: true; userId: string } | { ok: false; dbError?: string }
+type ResolveResult = { ok: true; userId: string } | { ok: false; dbError?: string; expired?: boolean }
 
 async function resolveUserId(token: string): Promise<ResolveResult> {
   const supabase = createAdminClient()
   const { data, error } = await supabase
     .from('mcp_tokens')
-    .select('user_id')
+    .select('user_id, expires_at')
     .eq('token_hash', hashToken(token))
     .maybeSingle()
   if (error) return { ok: false, dbError: error.message }
   if (!data) return { ok: false }
+  if (data.expires_at && new Date(data.expires_at).getTime() < Date.now()) return { ok: false, expired: true }
   await supabase.from('mcp_tokens').update({ last_used_at: new Date().toISOString() }).eq('user_id', data.user_id)
   return { ok: true, userId: data.user_id }
 }
@@ -33,6 +34,9 @@ async function handle(req: NextRequest, context: { params: Promise<{ token: stri
   if (!resolved.ok) {
     if (resolved.dbError) {
       return NextResponse.json({ error: `Connection lookup failed: ${resolved.dbError}` }, { status: 500 })
+    }
+    if (resolved.expired) {
+      return NextResponse.json({ error: 'Connection link has expired' }, { status: 401 })
     }
     return NextResponse.json({ error: 'Invalid or revoked connection link' }, { status: 401 })
   }
