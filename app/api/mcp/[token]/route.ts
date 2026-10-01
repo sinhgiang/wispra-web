@@ -35,10 +35,14 @@ async function handle(req: NextRequest, context: { params: Promise<{ token: stri
     if (resolved.dbError) {
       return NextResponse.json({ error: `Connection lookup failed: ${resolved.dbError}` }, { status: 500 })
     }
+    // 403, not 401: a 401 tells MCP clients (incl. Claude.ai) "this server needs OAuth,"
+    // which sends them into a dynamic-client-registration flow Wispra never implements —
+    // surfacing as a confusing "Couldn't register with Wispra's sign-in service" error
+    // instead of the real problem (a dead/rotated link). 403 means "no" without inviting that.
     if (resolved.expired) {
-      return NextResponse.json({ error: 'Connection link has expired' }, { status: 401 })
+      return NextResponse.json({ error: 'Connection link has expired' }, { status: 403 })
     }
-    return NextResponse.json({ error: 'Invalid or revoked connection link' }, { status: 401 })
+    return NextResponse.json({ error: 'Invalid or revoked connection link' }, { status: 403 })
   }
   const userId = resolved.userId
 
