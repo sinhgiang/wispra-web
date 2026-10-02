@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createAdminClient, validateToken, currentMonth } from '@/lib/supabase-server'
+import { getAiQuotaStatus } from '@/lib/ai-quota'
 
 const FREE_LIMIT_SECONDS = 30 * 60
 
@@ -18,9 +19,10 @@ export async function GET(req: NextRequest) {
   const supabase = createAdminClient()
   const month = currentMonth()
 
-  const [{ data: sub }, { data: usage }] = await Promise.all([
+  const [{ data: sub }, { data: usage }, aiQuota] = await Promise.all([
     supabase.from('subscriptions').select('plan, current_period_end').eq('user_id', userId).single(),
     supabase.from('usage').select('seconds_used').eq('user_id', userId).eq('month', month).single(),
+    getAiQuotaStatus(supabase, userId),
   ])
 
   const plan = sub?.plan ?? 'free'
@@ -31,6 +33,9 @@ export async function GET(req: NextRequest) {
     plan,
     usageSeconds: secondsUsed,
     limitSeconds,
+    aiTokensUsed: aiQuota.usedTokens,
+    aiTokensLimit: aiQuota.limitTokens,
+    aiTokensResetAt: aiQuota.resetAt,
     currentPeriodEnd: sub?.current_period_end ?? null,
     subscribeUrl: process.env.POLAR_CHECKOUT_URL ?? null,
   })
