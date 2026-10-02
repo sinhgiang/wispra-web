@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { validateToken } from '@/lib/supabase-server'
+import { createAdminClient, validateToken } from '@/lib/supabase-server'
+import { AI_QUOTA_EXCEEDED_CODE, getAiQuotaStatus, recordAiTokens } from '@/lib/ai-quota'
 
 const GROQ_CHAT_URL = 'https://api.groq.com/openai/v1/chat/completions'
 
@@ -17,6 +18,21 @@ const ALLOWED_MODELS = new Set([
 ])
 
 const DEFAULT_MODEL = 'openai/gpt-oss-120b'
+
+/** Tokens Groq billed for this call (prompt + completion), or null if it did not say. */
+function billedTokens(payload: unknown): number | null {
+  const usage = (payload as { usage?: Record<string, unknown> } | null)?.usage
+  if (!usage || typeof usage !== 'object') return null
+  if (typeof usage.total_tokens === 'number') return usage.total_tokens
+  const prompt = typeof usage.prompt_tokens === 'number' ? usage.prompt_tokens : 0
+  const completion = typeof usage.completion_tokens === 'number' ? usage.completion_tokens : 0
+  return prompt + completion > 0 ? prompt + completion : null
+}
+
+/** Rough fallback (about 3 characters per token) for a successful call with no usage block. */
+function estimateTokens(messages: unknown[], responseText: string): number {
+  return Math.ceil((JSON.stringify(messages).length + responseText.length) / 3)
+}
 
 export async function POST(req: NextRequest) {
   // ── Auth ────────────────────────────────────────────────────────────────────
@@ -57,8 +73,34 @@ export async function POST(req: NextRequest) {
   // Enforce safe model — don't let clients route to arbitrary or expensive models
   const model = ALLOWED_MODELS.has(body.model ?? '') ? body.model : DEFAULT_MODEL
 
+  // ── Monthly token quota ─────────────────────────────────────────────────────
+  // Checked once, before the call. A request that is let in always runs to the
+  // end, even if it takes the user past the limit; the next one is refused.
+  const supabase = createAdminClient()
+  const quota = await getAiQuotaStatus(supabase, userId)
+  if (quota.exceeded) {
+    const limit = quota.limitTokens.toLocaleString('en-US')
+    const resetDay = quota.resetAt.slice(0, 10)
+    const error =
+      quota.plan === 'free'
+        ? `Monthly AI limit reached (${limit} tokens on the Free plan). It resets on ${resetDay}. Upgrade to Pro for a higher limit.`
+        : `Monthly AI limit reached (${limit} tokens). It resets on ${resetDay}.`
+    return NextResponse.json(
+      {
+        error,
+        code: AI_QUOTA_EXCEEDED_CODE,
+        plan: quota.plan,
+        limitTokens: quota.limitTokens,
+        usedTokens: quota.usedTokens,
+        resetAt: quota.resetAt,
+      },
+      { status: 402 }
+    )
+  }
+
   // ── Forward to Groq ─────────────────────────────────────────────────────────
   let groqResponse: Response
+  let text: string
   try {
     groqResponse = await fetch(GROQ_CHAT_URL, {
       method: 'POST',
@@ -74,6 +116,7 @@ export async function POST(req: NextRequest) {
       }),
       signal: AbortSignal.timeout(35_000),
     })
+    text = await groqResponse.text()
   } catch (err) {
     const msg =
       err instanceof Error && err.name === 'TimeoutError'
@@ -82,11 +125,26 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: msg }, { status: 503 })
   }
 
+  let result: unknown = null
+  try {
+    result = JSON.parse(text)
+  } catch { /* not JSON — handled below */ }
+
+  // ── Record usage ────────────────────────────────────────────────────────────
+  // Awaited before any response is returned, so the tokens are counted even if
+  // the client has gone away, and for Groq errors that still report usage.
+  // Best-effort: a failed write does not fail the response.
+  const tokens =
+    billedTokens(result) ?? (groqResponse.ok ? estimateTokens(body.messages, text) : 0)
+  await recordAiTokens(supabase, userId, quota.month, tokens)
+
   if (!groqResponse.ok) {
-    const text = await groqResponse.text()
     return NextResponse.json({ error: text }, { status: groqResponse.status })
   }
 
-  const result = await groqResponse.json()
+  if (result === null) {
+    return NextResponse.json({ error: 'Invalid response from AI service' }, { status: 502 })
+  }
+
   return NextResponse.json(result)
 }
