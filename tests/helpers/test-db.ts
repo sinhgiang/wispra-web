@@ -11,8 +11,10 @@ export function readMigration(file: string): string {
 
 /**
  * In-memory Postgres (PGlite) with the bits of Supabase the migrations expect
- * (auth.users, the anon/authenticated/service_role roles), then the real
- * migration files applied on top. Nothing here talks to a real database.
+ * (auth.users, the anon/authenticated/service_role roles, and Supabase's default
+ * grants: every new public table and function is granted to all three roles),
+ * then the real migration files applied on top. Nothing here talks to a real
+ * database.
  */
 export async function createTestDb(
   migrations: string[] = ['001_initial.sql', '005_ai_token_usage.sql']
@@ -25,6 +27,8 @@ export async function createTestDb(
     CREATE ROLE authenticated NOLOGIN;
     CREATE ROLE service_role NOLOGIN BYPASSRLS;
     GRANT USAGE ON SCHEMA public TO anon, authenticated, service_role;
+    ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON TABLES TO anon, authenticated, service_role;
+    ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON FUNCTIONS TO anon, authenticated, service_role;
   `)
   for (const file of migrations) {
     await pg.exec(readMigration(file))
@@ -84,6 +88,21 @@ export function fakeSupabase(pg: PGlite): SupabaseClient {
     },
   }
   return client as unknown as SupabaseClient
+}
+
+/** Runs one statement as the given Supabase role, then switches back. */
+export async function queryAs<T>(
+  pg: PGlite,
+  role: 'anon' | 'authenticated' | 'service_role',
+  sql: string,
+  params: unknown[] = []
+) {
+  await pg.exec(`SET ROLE ${role}`)
+  try {
+    return await pg.query<T>(sql, params)
+  } finally {
+    await pg.exec('RESET ROLE')
+  }
 }
 
 export async function tokensUsed(pg: PGlite, userId: string, month: string): Promise<number | null> {
