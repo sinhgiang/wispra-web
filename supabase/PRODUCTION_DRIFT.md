@@ -56,7 +56,8 @@ Supabase. `001_initial.sql` says only the service role can.
 
 - `public.handle_new_user()`: trigger function, `SECURITY DEFINER`, owner
   `postgres`, **no `search_path` set**. Inserts `(user_id)` into
-  `public.subscriptions` for the new account.
+  `public.subscriptions` for the new account. Since `006_lock_increment_usage.sql`
+  only `postgres`, `service_role` and `supabase_auth_admin` may execute it.
 - `on_auth_user_created`: `AFTER INSERT ON auth.users FOR EACH ROW EXECUTE FUNCTION handle_new_user()`.
 
 If `handle_new_user` fails, signup fails. A migration that changes
@@ -68,12 +69,18 @@ break account creation.
 Signature and body match `001_initial.sql` (`SECURITY DEFINER`,
 `search_path = public`). On production it relies on the `UNIQUE (user_id, month)`
 constraint rather than the primary key. It does not touch `usage.updated_at`.
+Since `006_lock_increment_usage.sql` only `postgres` and `service_role` may
+execute it.
 
 ### What does match
 
 - `synced_history`, `synced_meetings`, `synced_lexicon` (`002_sync.sql`)
 - `mcp_tokens` (`003_mcp_tokens.sql`) and its `expires_at` column (`004_mcp_token_expiry.sql`)
 - `ai_token_usage` and `increment_ai_tokens` (`005_ai_token_usage.sql`), applied 2026-10-02
+- the privileges set by `006_lock_increment_usage.sql`, applied 2026-10-02
+
+`tests/helpers/production-schema.sql` is the state before 005 and 006, so that
+tests can apply those two on top.
 
 ## What this means for the code
 
@@ -101,7 +108,19 @@ common:
 
 ## Supabase's migration list
 
-`supabase_migrations` on production holds one entry, `20261002050702 ai_token_usage`
-(migration 005, applied through the Supabase tooling). 001 to 004 are not listed
-because they were run by hand. An empty or short list there does not mean the
-earlier migrations are missing: check the tables themselves.
+Supabase's migration list on production holds two entries, both applied through
+the Supabase tooling on 2026-10-02:
+
+| Version | Name | File in this repo |
+|---|---|---|
+| `20261002050702` | `ai_token_usage` | `005_ai_token_usage.sql` |
+| `20261002070128` | `lock_increment_usage` | `006_lock_increment_usage.sql` |
+
+001 to 004 are not listed because they were run by hand. A short list there does
+not mean the earlier migrations are missing: check the tables themselves.
+
+## Row counts are not what the dashboard summary says
+
+The table summary Supabase returns showed 0 rows for `subscriptions` and `usage`
+on 2026-10-02 while `count(*)` returned 5 and 2. That summary is an estimate;
+count the rows when the number matters.

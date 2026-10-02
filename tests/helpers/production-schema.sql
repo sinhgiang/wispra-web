@@ -2,7 +2,8 @@
 -- Test fixture only: never run this against a real database.
 --
 -- Rebuilt from read-only catalog queries on the production project
--- (tpiycamfsagesjeciubg) on 2026-10-02. It differs from 001_initial.sql; the
+-- (tpiycamfsagesjeciubg) on 2026-10-02, as it was before migrations 005 and 006
+-- were applied there, so tests can apply them on top. It differs from 001_initial.sql; the
 -- differences are listed in supabase/PRODUCTION_DRIFT.md. Tests that must hold
 -- on the live database build on this file instead of 001.
 
