@@ -11,24 +11,62 @@ export function readMigration(file: string): string {
 
 /**
  * In-memory Postgres (PGlite) with the bits of Supabase the migrations expect
- * (auth.users, the anon/authenticated/service_role roles), then the real
- * migration files applied on top. Nothing here talks to a real database.
+ * (auth.users, the anon/authenticated/service_role roles, and Supabase's default
+ * grants: every new public table and function is granted to all three roles),
+ * then the real migration files applied on top. Nothing here talks to a real
+ * database.
  */
 export async function createTestDb(
   migrations: string[] = ['001_initial.sql', '005_ai_token_usage.sql']
 ): Promise<PGlite> {
-  const pg = new PGlite()
-  await pg.exec(`
-    CREATE SCHEMA auth;
-    CREATE TABLE auth.users (id uuid PRIMARY KEY);
-    CREATE ROLE anon NOLOGIN;
-    CREATE ROLE authenticated NOLOGIN;
-    CREATE ROLE service_role NOLOGIN BYPASSRLS;
-    GRANT USAGE ON SCHEMA public TO anon, authenticated, service_role;
-  `)
+  const pg = await createSupabaseLikeDb()
   for (const file of migrations) {
     await pg.exec(readMigration(file))
   }
+  return pg
+}
+
+/**
+ * Same, but built the way PRODUCTION really is: production-schema.sql (a
+ * snapshot of the live subscriptions/usage tables, policies, functions and the
+ * signup trigger, which differ from 001_initial.sql) followed by the migrations
+ * that do match production. See supabase/PRODUCTION_DRIFT.md.
+ */
+export async function createProductionLikeDb(
+  migrations: string[] = [
+    '002_sync.sql',
+    '003_mcp_tokens.sql',
+    '004_mcp_token_expiry.sql',
+    '005_ai_token_usage.sql',
+  ]
+): Promise<PGlite> {
+  const pg = await createSupabaseLikeDb()
+  await pg.exec(readFileSync(join(__dirname, 'production-schema.sql'), 'utf8'))
+  for (const file of migrations) {
+    await pg.exec(readMigration(file))
+  }
+  return pg
+}
+
+async function createSupabaseLikeDb(): Promise<PGlite> {
+  const pg = new PGlite()
+  // supabase_auth_admin owns auth.users and is the role that inserts the row
+  // when someone signs up, as on Supabase.
+  await pg.exec(`
+    CREATE ROLE anon NOLOGIN;
+    CREATE ROLE authenticated NOLOGIN;
+    CREATE ROLE service_role NOLOGIN BYPASSRLS;
+    CREATE ROLE supabase_auth_admin NOLOGIN;
+    CREATE SCHEMA auth AUTHORIZATION supabase_auth_admin;
+    CREATE TABLE auth.users (id uuid PRIMARY KEY);
+    ALTER TABLE auth.users OWNER TO supabase_auth_admin;
+    CREATE FUNCTION auth.uid() RETURNS uuid LANGUAGE sql STABLE
+      AS $$ SELECT nullif(current_setting('request.jwt.claim.sub', true), '')::uuid $$;
+    GRANT USAGE ON SCHEMA auth TO anon, authenticated, service_role;
+    GRANT USAGE ON SCHEMA public TO anon, authenticated, service_role;
+    ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON TABLES TO anon, authenticated, service_role;
+    ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON FUNCTIONS TO anon, authenticated, service_role;
+  `)
   return pg
 }
 
@@ -84,6 +122,21 @@ export function fakeSupabase(pg: PGlite): SupabaseClient {
     },
   }
   return client as unknown as SupabaseClient
+}
+
+/** Runs one statement as the given Supabase role, then switches back. */
+export async function queryAs<T>(
+  pg: PGlite,
+  role: string,
+  sql: string,
+  params: unknown[] = []
+) {
+  await pg.exec(`SET ROLE ${role}`)
+  try {
+    return await pg.query<T>(sql, params)
+  } finally {
+    await pg.exec('RESET ROLE')
+  }
 }
 
 export async function tokensUsed(pg: PGlite, userId: string, month: string): Promise<number | null> {

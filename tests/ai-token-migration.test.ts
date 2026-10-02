@@ -1,6 +1,6 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import type { PGlite } from '@electric-sql/pglite'
-import { createTestDb, readMigration, tokensUsed } from './helpers/test-db'
+import { createTestDb, queryAs, readMigration, tokensUsed } from './helpers/test-db'
 
 const USER_A = '00000000-0000-4000-8000-00000000000a'
 const USER_B = '00000000-0000-4000-8000-00000000000b'
@@ -61,18 +61,20 @@ describe('migration 005_ai_token_usage', () => {
     )
     expect(rls.rows[0].relrowsecurity).toBe(true)
 
-    const priv = await pg.query<{ role: string; can_call: boolean; can_read: boolean }>(`
-      SELECT r AS role,
-             has_function_privilege(r, 'public.increment_ai_tokens(uuid, text, bigint)', 'EXECUTE') AS can_call,
-             has_table_privilege(r, 'public.ai_token_usage', 'SELECT') AS can_read
-      FROM unnest(ARRAY['anon', 'authenticated', 'service_role']) AS r
-    `)
-    const byRole = Object.fromEntries(priv.rows.map(row => [row.role, row]))
-    expect(byRole.anon.can_call).toBe(false)
-    expect(byRole.authenticated.can_call).toBe(false)
-    expect(byRole.service_role.can_call).toBe(true)
-    expect(byRole.anon.can_read).toBe(false)
-    expect(byRole.authenticated.can_read).toBe(false)
+    const call = 'SELECT public.increment_ai_tokens($1, $2, $3) AS total'
+    for (const role of ['anon', 'authenticated'] as const) {
+      await expect(queryAs(pg, role, call, [USER_A, '2026-10', 1])).rejects.toThrow(/permission denied/)
+      // RLS with no policies: the rows are there, but these roles see none and cannot add any.
+      const seen = await queryAs<{ n: number }>(pg, role, 'SELECT count(*)::int AS n FROM public.ai_token_usage')
+      expect(seen.rows[0].n).toBe(0)
+      await expect(
+        queryAs(pg, role, 'INSERT INTO public.ai_token_usage (user_id, month) VALUES ($1, $2)', [USER_A, '2030-01'])
+      ).rejects.toThrow(/row-level security/)
+    }
+    expect(await tokensUsed(pg, USER_A, '2026-10')).toBe(2000)
+
+    const asServer = await queryAs<{ total: number | string }>(pg, 'service_role', call, [USER_A, '2031-01', 5])
+    expect(Number(asServer.rows[0].total)).toBe(5)
   })
 
   it('leaves the existing usage table and function untouched', async () => {
