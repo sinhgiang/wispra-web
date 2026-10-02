@@ -1,6 +1,11 @@
 -- Wispra — initial database schema
 -- Run this in the Supabase dashboard: SQL Editor → New query → paste & run
 -- URL: https://supabase.com/dashboard/project/tpiycamfsagesjeciubg/sql/new
+--
+-- NOTE: production does not have this structure. Its subscriptions and usage
+-- tables came from an earlier schema file, so the two CREATE TABLE IF NOT EXISTS
+-- below were skipped there. See supabase/PRODUCTION_DRIFT.md before relying on
+-- this file.
 
 -- ── subscriptions ──────────────────────────────────────────────────────────────
 -- One row per user. Created by the Polar webhook on first purchase.
