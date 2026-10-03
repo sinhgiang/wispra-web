@@ -58,7 +58,7 @@ async function createSupabaseLikeDb(): Promise<PGlite> {
     CREATE ROLE service_role NOLOGIN BYPASSRLS;
     CREATE ROLE supabase_auth_admin NOLOGIN;
     CREATE SCHEMA auth AUTHORIZATION supabase_auth_admin;
-    CREATE TABLE auth.users (id uuid PRIMARY KEY);
+    CREATE TABLE auth.users (id uuid PRIMARY KEY, email text);
     ALTER TABLE auth.users OWNER TO supabase_auth_admin;
     CREATE FUNCTION auth.uid() RETURNS uuid LANGUAGE sql STABLE
       AS $$ SELECT nullif(current_setting('request.jwt.claim.sub', true), '')::uuid $$;

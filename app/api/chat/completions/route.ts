@@ -76,9 +76,10 @@ export async function POST(req: NextRequest) {
   // ── Monthly token quota ─────────────────────────────────────────────────────
   // Checked once, before the call. A request that is let in always runs to the
   // end, even if it takes the user past the limit; the next one is refused.
+  // Accounts marked unlimited are never refused, but their tokens are counted.
   const supabase = createAdminClient()
   const quota = await getAiQuotaStatus(supabase, userId)
-  if (quota.exceeded) {
+  if (quota.exceeded && quota.limitTokens !== null) {
     const limit = quota.limitTokens.toLocaleString('en-US')
     const resetDay = quota.resetAt.slice(0, 10)
     const error =

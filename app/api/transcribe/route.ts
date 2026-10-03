@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createAdminClient, validateToken, currentMonth } from '@/lib/supabase-server'
+import { getAccount } from '@/lib/account'
 
 const FREE_LIMIT_SECONDS = 30 * 60 // 30 minutes
 
@@ -18,16 +19,10 @@ export async function POST(req: NextRequest) {
   const supabase = createAdminClient()
 
   // Check user plan
-  const { data: sub } = await supabase
-    .from('subscriptions')
-    .select('plan')
-    .eq('user_id', userId)
-    .single()
+  const { plan, unlimited } = await getAccount(supabase, userId)
 
-  const plan = sub?.plan ?? 'free'
-
-  // Enforce free-tier limit
-  if (plan === 'free') {
+  // Enforce free-tier limit (accounts marked unlimited are exempt)
+  if (plan === 'free' && !unlimited) {
     const month = currentMonth()
     const { data: usage } = await supabase
       .from('usage')
