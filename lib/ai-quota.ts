@@ -1,5 +1,6 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { currentMonth } from '@/lib/supabase-server'
+import { getAccount, toPlan, type Plan } from '@/lib/account'
 
 // ── Monthly AI text token limits ──────────────────────────────────────────────
 // One shared budget per user per calendar month (UTC) for every AI text feature
@@ -12,16 +13,18 @@ export const AI_TOKEN_LIMITS = {
   pro: 5_000_000,
 } as const
 
-export type AiPlan = keyof typeof AI_TOKEN_LIMITS
+export type AiPlan = Plan
 
 /** Machine-readable error code returned with HTTP 402 when the quota is used up. */
 export const AI_QUOTA_EXCEEDED_CODE = 'ai_quota_exceeded'
 
 export interface AiQuotaStatus {
   plan: AiPlan
+  /** True for an account exempt from limits; limitTokens is then null. */
+  unlimited: boolean
   /** 'YYYY-MM' (UTC) the numbers below belong to. */
   month: string
-  limitTokens: number
+  limitTokens: number | null
   usedTokens: number
   /** ISO timestamp of the next reset: 00:00 UTC on the 1st of next month. */
   resetAt: string
@@ -29,9 +32,7 @@ export interface AiQuotaStatus {
 }
 
 /** Any plan value we do not know is treated as free. */
-export function toAiPlan(plan: string | null | undefined): AiPlan {
-  return plan === 'pro' ? 'pro' : 'free'
-}
+export const toAiPlan = toPlan
 
 /** 00:00 UTC on the 1st of the month after `now`. */
 export function aiQuotaResetAt(now: Date = new Date()): string {
@@ -51,8 +52,8 @@ export async function getAiQuotaStatus(
 ): Promise<AiQuotaStatus> {
   const month = currentMonth()
 
-  const [{ data: sub }, { data: usage, error: usageError }] = await Promise.all([
-    supabase.from('subscriptions').select('plan').eq('user_id', userId).maybeSingle(),
+  const [account, { data: usage, error: usageError }] = await Promise.all([
+    getAccount(supabase, userId),
     supabase
       .from('ai_token_usage')
       .select('tokens_used')
@@ -65,17 +66,18 @@ export async function getAiQuotaStatus(
     console.error('[ai-quota] could not read ai_token_usage, allowing request:', usageError.message)
   }
 
-  const plan = toAiPlan(sub?.plan)
-  const limitTokens = AI_TOKEN_LIMITS[plan]
+  const { plan, unlimited } = account
+  const limitTokens = unlimited ? null : AI_TOKEN_LIMITS[plan]
   const usedTokens = Number(usage?.tokens_used ?? 0)
 
   return {
     plan,
+    unlimited,
     month,
     limitTokens,
     usedTokens,
     resetAt: aiQuotaResetAt(),
-    exceeded: usedTokens >= limitTokens,
+    exceeded: limitTokens !== null && usedTokens >= limitTokens,
   }
 }
 
