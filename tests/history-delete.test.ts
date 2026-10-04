@@ -226,6 +226,8 @@ describe('when the deleted entries cannot be read', () => {
     const failing = {
       select: () => failing,
       eq: () => failing,
+      order: () => failing,
+      range: () => failing,
       then: (resolve: (v: unknown) => unknown) => Promise.resolve({ data: null, error: { code, message } }).then(resolve),
     }
     return { ...real, from: (table: string) => (table === 'synced_history_deletions' ? failing : real.from(table)) } as unknown as SupabaseClient

@@ -4,6 +4,7 @@
 // /api/sync and /api/history/merge so no device can bring a deleted entry back.
 
 import type { SupabaseClient } from '@supabase/supabase-js'
+import { chunks, readAllPages } from '@/lib/supabase-paging'
 
 /** The id that records "delete everything": its deleted_at is the last clear. */
 export const CLEAR_ALL_ID = '*'
@@ -49,10 +50,18 @@ export function isMissingTable(error: { code?: string; message?: string }): bool
  * entries back.
  */
 export async function getDeletions(supabase: SupabaseClient, userId: string): Promise<DeletionsResult> {
-  const { data, error } = await supabase
-    .from('synced_history_deletions')
-    .select('id, deleted_at')
-    .eq('user_id', userId)
+  // Paged in a stable order: Supabase returns at most 1000 rows per select and
+  // drops the rest silently, which would let deleted entries come back.
+  const { data, error } = await readAllPages<{ id: string; deleted_at: string }, { code?: string; message: string }>(
+    (from, to) =>
+      supabase
+        .from('synced_history_deletions')
+        .select('id, deleted_at')
+        .eq('user_id', userId)
+        .order('deleted_at', { ascending: true })
+        .order('id', { ascending: true })
+        .range(from, to)
+  )
   if (error) {
     if (isMissingTable(error)) {
       console.error('[history] synced_history_deletions does not exist (migration 008 not applied); treating nothing as deleted')
@@ -87,8 +96,18 @@ export function isDeleted(entry: { id: string; createdAt: string }, deletions: D
  * Records that each of `ids` (or CLEAR_ALL_ID) was deleted at `at`; a later
  * deletion of the same id moves the time.
  */
-export async function recordDeletions(supabase: SupabaseClient, userId: string, ids: string[], at: string) {
-  return supabase
-    .from('synced_history_deletions')
-    .upsert(ids.map(id => ({ user_id: userId, id, deleted_at: at })), { onConflict: 'user_id,id' })
+export async function recordDeletions(
+  supabase: SupabaseClient,
+  userId: string,
+  ids: string[],
+  at: string
+): Promise<{ error: { message: string } | null }> {
+  // In chunks, so deleting a long history does not send thousands of rows at once.
+  for (const part of chunks(ids)) {
+    const { error } = await supabase
+      .from('synced_history_deletions')
+      .upsert(part.map(id => ({ user_id: userId, id, deleted_at: at })), { onConflict: 'user_id,id' })
+    if (error) return { error }
+  }
+  return { error: null }
 }

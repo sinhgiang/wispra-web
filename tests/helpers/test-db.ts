@@ -77,7 +77,11 @@ const ident = (name: string) => `"${name.replace(/"/g, '""')}"`
  * (from().select().eq().maybeSingle()/single() and rpc()), backed by PGlite so
  * the routes run against the real table and SQL function from the migration.
  */
-export function fakeSupabase(pg: PGlite): SupabaseClient {
+/**
+ * Like Supabase, every select returns at most `maxRows` rows (PostgREST max-rows,
+ * 1000 by default) and silently drops the rest, so tests catch unpaged reads.
+ */
+export function fakeSupabase(pg: PGlite, { maxRows = 1000 }: { maxRows?: number } = {}): SupabaseClient {
   const client = {
     from(table: string) {
       const target = `public.${ident(table)}`
@@ -88,6 +92,7 @@ export function fakeSupabase(pg: PGlite): SupabaseClient {
       const filters: { col: string; op: '=' | '<' | 'NOT LIKE'; value: unknown }[] = []
       let orderBy = ''
       let limit: number | null = null
+      let offset = 0
 
       const where = (offset = 0) => {
         const parts = filters.map((f, i) => `${ident(f.col)} ${f.op} $${i + 1 + offset}`)
@@ -99,7 +104,7 @@ export function fakeSupabase(pg: PGlite): SupabaseClient {
         try {
           if (mode === 'select') {
             const res = await pg.query(
-              `SELECT ${columns} FROM ${target}${where()}${orderBy}${limit !== null ? ` LIMIT ${limit}` : ''}`,
+              `SELECT ${columns} FROM ${target}${where()}${orderBy} LIMIT ${Math.min(limit ?? maxRows, maxRows)} OFFSET ${offset}`,
               params()
             )
             return { data: res.rows, error: null }
@@ -179,6 +184,11 @@ export function fakeSupabase(pg: PGlite): SupabaseClient {
         },
         limit(n: number) {
           limit = n
+          return query
+        },
+        range(from: number, to: number) {
+          offset = from
+          limit = to - from + 1
           return query
         },
         maybeSingle: first,
