@@ -19,6 +19,21 @@ const ALLOWED_MODELS = new Set([
 
 const DEFAULT_MODEL = 'openai/gpt-oss-120b'
 
+// Asked once when DEFAULT_MODEL has reached its daily limit (it has its own
+// daily allowance). An answer from it carries `backup_model` in the body and
+// this header, so clients can say a backup model wrote it.
+const BACKUP_MODEL = 'openai/gpt-oss-20b'
+const BACKUP_MODEL_HEADER = 'x-wispra-backup-model'
+
+type GroqAttempt =
+  | { response: Response; text: string; result: unknown }
+  | { failed: 'timeout' | 'network-error' }
+
+/** A 429 that is about a daily allowance (tokens or requests per day), not a per-minute one. */
+function isDailyLimit(status: number, text: string): boolean {
+  return status === 429 && /per day|\((?:TPD|RPD)\)/i.test(text)
+}
+
 // The desktop app waits 60 s for an AI call; give Groq a little less, so a slow
 // answer still arrives instead of the proxy giving up first.
 const GROQ_TIMEOUT_MS = 55_000
@@ -53,6 +68,10 @@ function logCall(call: {
   started: number
   result?: unknown
   errorText?: string
+  /** Set on the second call: the model whose daily limit sent us to this backup. */
+  backupFor?: string
+  /** What Groq's rate-limit headers say about the server key. */
+  limits?: Record<string, number>
 }): void {
   const data = call.result as
     | { usage?: { prompt_tokens?: number; completion_tokens?: number }; choices?: { finish_reason?: string; message?: { content?: string } }[] }
@@ -71,10 +90,32 @@ function logCall(call: {
     finishReason: choice?.finish_reason,
     answerChars: typeof choice?.message?.content === 'string' ? choice.message.content.length : undefined,
     ms: Date.now() - call.started,
+    ...(call.backupFor ? { backupFor: call.backupFor } : {}),
+    ...(call.limits && Object.keys(call.limits).length ? { limits: call.limits } : {}),
     ...(call.errorText ? { groqError: groqErrorMessage(call.errorText) } : {}),
   }
   if (typeof call.status === 'number' && call.status < 400) console.info('[ai-call]', JSON.stringify(line))
   else console.error('[ai-call]', JSON.stringify(line))
+}
+
+/**
+ * Groq's rate-limit headers as numbers: requests per day (limit and left today)
+ * and tokens per minute (limit and left this minute). Groq does not send the
+ * tokens left today; that only shows in a daily-limit error.
+ */
+function groqLimits(headers: Headers): Record<string, number> {
+  const fields: [string, string][] = [
+    ['requestsPerDay', 'x-ratelimit-limit-requests'],
+    ['requestsLeftToday', 'x-ratelimit-remaining-requests'],
+    ['tokensPerMinute', 'x-ratelimit-limit-tokens'],
+    ['tokensLeftThisMinute', 'x-ratelimit-remaining-tokens'],
+  ]
+  const out: Record<string, number> = {}
+  for (const [key, header] of fields) {
+    const value = Number(headers.get(header))
+    if (headers.has(header) && Number.isFinite(value)) out[key] = value
+  }
+  return out
 }
 
 /** Groq's error message (limits, model, sizes), without any failed generation text. */
@@ -140,7 +181,7 @@ export async function POST(req: NextRequest) {
   }
 
   // Enforce safe model — don't let clients route to arbitrary or expensive models
-  const model = ALLOWED_MODELS.has(body.model ?? '') ? body.model : DEFAULT_MODEL
+  const model = body.model && ALLOWED_MODELS.has(body.model) ? body.model : DEFAULT_MODEL
 
   // ── Monthly token quota ─────────────────────────────────────────────────────
   // Checked once, before the call. A request that is let in always runs to the
@@ -173,66 +214,86 @@ export async function POST(req: NextRequest) {
   // JSON mode is passed on, and Groq's rate-limit headers come back.
   const responseFormat = allowedResponseFormat(body.response_format)
   const maxTokens = body.max_tokens ?? 8192
-  const started = Date.now()
-  let groqResponse: Response
-  let text: string
-  try {
-    groqResponse = await fetch(GROQ_CHAT_URL, {
-      method: 'POST',
-      headers: {
-        Authorization: `Bearer ${process.env.GROQ_API_KEY}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        model,
-        messages: body.messages,
-        max_tokens: maxTokens,
-        temperature: body.temperature ?? 0,
-        ...(responseFormat ? { response_format: responseFormat } : {}),
-      }),
-      signal: AbortSignal.timeout(GROQ_TIMEOUT_MS),
-    })
-    text = await groqResponse.text()
-  } catch (err) {
-    const timedOut = err instanceof Error && err.name === 'TimeoutError'
-    logCall({ status: timedOut ? 'timeout' : 'network-error', model, jsonMode: !!responseFormat, maxTokens, messages: body.messages, started })
-    const msg = timedOut ? 'AI request timed out' : 'Network error contacting AI service'
+  const messages = body.messages
+
+  /** One call to Groq with `withModel`; its tokens are recorded and it is logged. */
+  const callGroq = async (withModel: string, backupFor?: string): Promise<GroqAttempt> => {
+    const started = Date.now()
+    const log = { model: withModel, jsonMode: !!responseFormat, maxTokens, messages, started, backupFor }
+    let response: Response
+    let text: string
+    try {
+      response = await fetch(GROQ_CHAT_URL, {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${process.env.GROQ_API_KEY}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          model: withModel,
+          messages,
+          max_tokens: maxTokens,
+          temperature: body.temperature ?? 0,
+          ...(responseFormat ? { response_format: responseFormat } : {}),
+        }),
+        signal: AbortSignal.timeout(GROQ_TIMEOUT_MS),
+      })
+      text = await response.text()
+    } catch (err) {
+      const timedOut = err instanceof Error && err.name === 'TimeoutError'
+      logCall({ ...log, status: timedOut ? 'timeout' : 'network-error' })
+      return { failed: timedOut ? 'timeout' : 'network-error' }
+    }
+
+    let result: unknown = null
+    try {
+      result = JSON.parse(text)
+    } catch { /* not JSON — handled by the caller */ }
+
+    // Recorded before any response is returned, so the tokens are counted even if
+    // the client has gone away, and for Groq errors that still report usage.
+    // Best-effort: a failed write does not fail the response.
+    const tokens = billedTokens(result) ?? (response.ok ? estimateTokens(messages, text) : 0)
+    await recordAiTokens(supabase, userId, quota.month, tokens)
+
+    logCall({ ...log, status: response.status, result, errorText: response.ok ? undefined : text, limits: groqLimits(response.headers) })
+    return { response, text, result }
+  }
+
+  const first = await callGroq(model)
+  if ('failed' in first) {
+    const msg = first.failed === 'timeout' ? 'AI request timed out' : 'Network error contacting AI service'
     return NextResponse.json({ error: msg }, { status: 503 })
   }
 
-  let result: unknown = null
-  try {
-    result = JSON.parse(text)
-  } catch { /* not JSON — handled below */ }
-
-  // ── Record usage ────────────────────────────────────────────────────────────
-  // Awaited before any response is returned, so the tokens are counted even if
-  // the client has gone away, and for Groq errors that still report usage.
-  // Best-effort: a failed write does not fail the response.
-  const tokens =
-    billedTokens(result) ?? (groqResponse.ok ? estimateTokens(body.messages, text) : 0)
-  await recordAiTokens(supabase, userId, quota.month, tokens)
-
-  logCall({
-    status: groqResponse.status,
-    model,
-    jsonMode: !!responseFormat,
-    maxTokens,
-    messages: body.messages,
-    started,
-    result,
-    errorText: groqResponse.ok ? undefined : text,
-  })
-
-  const headers = rateLimitHeaders(groqResponse.headers)
-
-  if (!groqResponse.ok) {
-    return NextResponse.json({ error: text }, { status: groqResponse.status, headers })
+  // ── Backup model after a daily limit ────────────────────────────────────────
+  // Groq's free tier gives each model its own daily token allowance. When the
+  // main model has used its allowance for the day, ask the smaller model once,
+  // and say so in the answer. If that fails too, the original daily-limit error
+  // goes back exactly as before, so the app tells the user about the limit.
+  let used = first
+  let backupModel: string | undefined
+  if (model === DEFAULT_MODEL && isDailyLimit(first.response.status, first.text)) {
+    const second = await callGroq(BACKUP_MODEL, model)
+    if (!('failed' in second) && second.response.ok && second.result !== null) {
+      used = second
+      backupModel = BACKUP_MODEL
+    }
   }
 
-  if (result === null) {
+  const headers = rateLimitHeaders(used.response.headers)
+
+  if (!used.response.ok) {
+    return NextResponse.json({ error: used.text }, { status: used.response.status, headers })
+  }
+
+  if (used.result === null) {
     return NextResponse.json({ error: 'Invalid response from AI service' }, { status: 502 })
   }
 
-  return NextResponse.json(result, { headers })
+  if (backupModel) {
+    headers.set(BACKUP_MODEL_HEADER, backupModel)
+    return NextResponse.json({ ...(used.result as object), backup_model: backupModel }, { headers })
+  }
+  return NextResponse.json(used.result, { headers })
 }
