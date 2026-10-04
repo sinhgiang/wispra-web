@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { getLatestRelease, pickDownloads, RELEASES_URL } from '@/lib/latest-release'
 
-const BASE = 'https://github.com/sinhgiang/wispra/releases/download/v0.6.5'
+const BASE = 'https://github.com/sinhgiang/wispra-releases/releases/download/v0.6.5'
 
 // The asset list of the real v0.6.5 release.
 const V065 = {
@@ -72,6 +72,6 @@ describe('download buttons follow the latest GitHub release', () => {
     const fetchMock = vi.fn().mockResolvedValueOnce(new Response(JSON.stringify(V065), { status: 200 }))
     vi.stubGlobal('fetch', fetchMock)
     expect((await getLatestRelease()).version).toBe('0.6.5')
-    expect(fetchMock.mock.calls[0][0]).toBe('https://api.github.com/repos/sinhgiang/wispra/releases/latest')
+    expect(fetchMock.mock.calls[0][0]).toBe('https://api.github.com/repos/sinhgiang/wispra-releases/releases/latest')
   })
 })

@@ -2,8 +2,9 @@
 // Read on the server; the home page re-checks it every hour (see app/page.tsx),
 // so a new release shows up on the site without a code change.
 
-export const RELEASES_URL = 'https://github.com/sinhgiang/wispra/releases'
-const LATEST_RELEASE_API = 'https://api.github.com/repos/sinhgiang/wispra/releases/latest'
+import { LATEST_RELEASE_API, RELEASES_URL } from '@/lib/wispra-releases'
+
+export { RELEASES_URL }
 
 export interface LatestRelease {
   /** e.g. '0.6.5', or null when GitHub could not be reached. */

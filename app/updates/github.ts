@@ -3,8 +3,7 @@
 // follow is described in docs/UPDATES.md.
 
 import type { Release } from './releases'
-
-const RELEASES_API = 'https://api.github.com/repos/sinhgiang/wispra/releases?per_page=100'
+import { ALL_RELEASES_API as RELEASES_API } from '@/lib/wispra-releases'
 
 /** The asset name the app's release process attaches as the page's screenshot. */
 export const SCREENSHOT_ASSET = 'screenshot.png'
