@@ -1,6 +1,7 @@
-import Image from 'next/image'
 import Link from 'next/link'
-import { LATEST, RELEASES, formatReleaseDate, releaseImage, type Release } from './releases'
+import { formatReleaseDate } from './releases'
+import type { UpdateEntry } from './data'
+import { hrefFor } from './links'
 import { LatestBadge } from './VersionNav'
 
 const SECTIONS = [
@@ -9,41 +10,57 @@ const SECTIONS = [
   { key: 'fixed', label: 'Fixed', dot: 'bg-[#27C93F]', text: 'text-[#3DDC5A]' },
 ] as const
 
-const hrefFor = (r: Release) => (r === LATEST ? '/updates' : `/updates/${r.version}`)
+/** Release notes from GitHub may use **bold** and `code`; everything else is plain text. */
+function Inline({ text }: { text: string }) {
+  return (
+    <>
+      {text.split(/(\*\*[^*]+\*\*|`[^`]+`)/).map((part, i) => {
+        if (/^\*\*[^*]+\*\*$/.test(part)) return <strong key={i} className="font-semibold text-text-primary">{part.slice(2, -2)}</strong>
+        if (/^`[^`]+`$/.test(part)) return <code key={i} className="rounded bg-white/5 px-1 py-0.5 text-[0.9em]">{part.slice(1, -1)}</code>
+        return part
+      })}
+    </>
+  )
+}
 
-export default function ReleaseView({ release }: { release: Release }) {
-  const index = RELEASES.indexOf(release)
-  const newer = index > 0 ? RELEASES[index - 1] : undefined
-  const older = index < RELEASES.length - 1 ? RELEASES[index + 1] : undefined
+export default function ReleaseView({ release, releases }: { release: UpdateEntry; releases: UpdateEntry[] }) {
+  const latest = releases[0]
+  const index = releases.findIndex(r => r.version === release.version)
+  const newer = index > 0 ? releases[index - 1] : undefined
+  const older = index >= 0 && index < releases.length - 1 ? releases[index + 1] : undefined
 
   return (
     <article>
       <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5 text-sm">
         <span className="font-mono font-semibold text-text-primary">v{release.version}</span>
-        {release === LATEST && <LatestBadge />}
+        {release.version === latest.version && <LatestBadge />}
         <time dateTime={release.date} className="text-text-muted">{formatReleaseDate(release.date)}</time>
       </div>
 
       <h2 className="mt-3 text-2xl sm:text-3xl font-bold tracking-tight text-text-primary text-balance">{release.title}</h2>
-      {release.summary && <p className="mt-3 text-base sm:text-lg text-text-muted leading-relaxed">{release.summary}</p>}
+      {release.summary && (
+        <p className="mt-3 text-base sm:text-lg text-text-muted leading-relaxed"><Inline text={release.summary} /></p>
+      )}
 
-      <figure className="mt-6 sm:mt-8">
-        <div className="relative rounded-xl sm:rounded-2xl border border-white/10 bg-bg-card p-1.5 sm:p-2 shadow-2xl shadow-brand/5">
-          <Image
-            key={release.version}
-            src={releaseImage(release.version)}
-            alt={release.imageAlt}
-            width={1600}
-            height={1000}
-            priority
-            unoptimized
-            className="w-full h-auto rounded-lg sm:rounded-xl"
-          />
-        </div>
-        <figcaption className="mt-2.5 text-xs text-text-muted text-center">
-          Wispra v{release.version}. Screenshot with sample content.
-        </figcaption>
-      </figure>
+      {release.image && (
+        <figure className="mt-6 sm:mt-8">
+          <div className="relative rounded-xl sm:rounded-2xl border border-white/10 bg-bg-card p-1.5 sm:p-2 shadow-2xl shadow-brand/5">
+            {/* Plain <img>: repo images are already optimized WebP; GitHub screenshots are served by GitHub. */}
+            <img
+              key={release.version}
+              src={release.image}
+              alt={release.imageAlt}
+              width={1600}
+              height={1000}
+              decoding="async"
+              className="w-full h-auto rounded-lg sm:rounded-xl"
+            />
+          </div>
+          <figcaption className="mt-2.5 text-xs text-text-muted text-center">
+            Wispra v{release.version}. Screenshot with sample content.
+          </figcaption>
+        </figure>
+      )}
 
       <div className="mt-8 sm:mt-10 space-y-8">
         {SECTIONS.map(({ key, label, dot, text }) => {
@@ -59,7 +76,7 @@ export default function ReleaseView({ release }: { release: Release }) {
                 {items.map(item => (
                   <li key={item} className="flex gap-3 text-[15px] leading-relaxed text-text-primary/90">
                     <span className="mt-2.5 h-1 w-1 shrink-0 rounded-full bg-white/30" />
-                    <span>{item}</span>
+                    <span><Inline text={item} /></span>
                   </li>
                 ))}
               </ul>
@@ -70,7 +87,7 @@ export default function ReleaseView({ release }: { release: Release }) {
 
       <nav aria-label="Other versions" className="mt-12 grid grid-cols-2 gap-3 border-t border-white/5 pt-6">
         {older ? (
-          <Link href={hrefFor(older)} className="group rounded-xl border border-white/5 bg-bg-card p-4 hover:border-white/15 transition-colors">
+          <Link href={hrefFor(older.version, latest.version)} className="group rounded-xl border border-white/5 bg-bg-card p-4 hover:border-white/15 transition-colors">
             <span className="block text-xs text-text-muted">← Older</span>
             <span className="mt-1 block text-sm font-semibold text-text-primary">v{older.version}</span>
           </Link>
@@ -78,7 +95,7 @@ export default function ReleaseView({ release }: { release: Release }) {
           <span />
         )}
         {newer ? (
-          <Link href={hrefFor(newer)} className="group rounded-xl border border-white/5 bg-bg-card p-4 text-right hover:border-white/15 transition-colors">
+          <Link href={hrefFor(newer.version, latest.version)} className="group rounded-xl border border-white/5 bg-bg-card p-4 text-right hover:border-white/15 transition-colors">
             <span className="block text-xs text-text-muted">Newer →</span>
             <span className="mt-1 block text-sm font-semibold text-text-primary">v{newer.version}</span>
           </Link>
