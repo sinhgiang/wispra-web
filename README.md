@@ -15,9 +15,9 @@
 
 <p align="center">
   <a href="https://wispra-web.vercel.app">Website</a> ·
-  <a href="https://github.com/sinhgiang/wispra/releases/latest">Download</a> ·
+  <a href="https://github.com/sinhgiang/wispra-releases/releases/latest">Download</a> ·
   <a href="https://wispra-web.vercel.app/updates">Updates</a> ·
-  <a href="https://github.com/sinhgiang/wispra/issues">Support</a>
+  <a href="https://github.com/sinhgiang/wispra-releases/issues">Support</a>
 </p>
 
 ---
@@ -191,7 +191,7 @@ rotated or revoked at any time; only a hash of it is stored on the server.
 
 ## How it works, step by step
 
-1. **Download Wispra** for Windows or macOS from the [latest release](https://github.com/sinhgiang/wispra/releases/latest)
+1. **Download Wispra** for Windows or macOS from the [latest release](https://github.com/sinhgiang/wispra-releases/releases/latest)
    and install it. The app updates itself when a new version is out.
 2. **Choose how it runs.** Paste a free Groq API key into Settings, or sign in and choose Wispra Cloud.
 3. **Press the hotkey** in any app and speak.
@@ -221,7 +221,7 @@ rotated or revoked at any time; only a hash of it is stored on the server.
 | Database | `supabase/migrations` | Tables, row-level security and the functions that count usage |
 
 The desktop app itself lives in a separate repository; its downloads and release notes are at
-[github.com/sinhgiang/wispra/releases](https://github.com/sinhgiang/wispra/releases).
+[github.com/sinhgiang/wispra-releases/releases](https://github.com/sinhgiang/wispra-releases/releases).
 
 ## Plans and limits
 
@@ -271,7 +271,7 @@ The Windows installer is not code-signed yet, so Windows SmartScreen may show a 
 "More info", then "Run anyway".
 
 More questions are answered on [the website](https://wispra-web.vercel.app), or open an
-[issue](https://github.com/sinhgiang/wispra/issues).
+[issue](https://github.com/sinhgiang/wispra-releases/issues).
 
 ## Tech stack
 
@@ -301,7 +301,7 @@ production database differs from `supabase/migrations/001_initial.sql` in places
 ### New releases on the Updates page
 
 [wispra-web.vercel.app/updates](https://wispra-web.vercel.app/updates) reads the releases of
-[`sinhgiang/wispra`](https://github.com/sinhgiang/wispra/releases) from GitHub and re-checks them every hour. A
+[`sinhgiang/wispra-releases`](https://github.com/sinhgiang/wispra-releases/releases) from GitHub and re-checks them every hour. A
 new version therefore appears there **without any change to this repository and without a deploy**, as long as
 the release is published like this (the desktop app's release process does it on every release):
 
@@ -310,7 +310,7 @@ the release is published like this (the desktop app's release process does it on
 2. **A headline in the release title**: `v0.6.6 — Mind maps you can edit`.
 3. **A screenshot attached as `screenshot.png`**: 1600 × 1000, dark mode, showing what changed, with
    **sample content only** (no real names, recordings, email addresses or file paths):
-   `gh release upload v0.6.6 screenshot.png -R sinhgiang/wispra`.
+   `gh release upload v0.6.6 screenshot.png -R sinhgiang/wispra-releases`.
 4. **Published** (not a draft or pre-release), with a tag like `v0.6.6`.
 
 The release is on the page, marked Latest, within an hour. Versions 0.1.0 to 0.6.5 are kept in this repository
@@ -322,6 +322,6 @@ an entry here: [docs/UPDATES.md](docs/UPDATES.md).
 Wispra is live at **[wispra-web.vercel.app](https://wispra-web.vercel.app)**.
 
 - See what it does: [wispra-web.vercel.app](https://wispra-web.vercel.app)
-- Download the latest version: [github.com/sinhgiang/wispra/releases/latest](https://github.com/sinhgiang/wispra/releases/latest)
+- Download the latest version: [github.com/sinhgiang/wispra-releases/releases/latest](https://github.com/sinhgiang/wispra-releases/releases/latest)
 - Read what changed in each version: [wispra-web.vercel.app/updates](https://wispra-web.vercel.app/updates)
-- Report a problem or ask a question: [issues](https://github.com/sinhgiang/wispra/issues)
+- Report a problem or ask a question: [issues](https://github.com/sinhgiang/wispra-releases/issues)

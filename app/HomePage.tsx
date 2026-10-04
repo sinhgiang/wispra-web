@@ -4,8 +4,7 @@ import { useState, useEffect, useRef } from 'react'
 import Link from 'next/link'
 import { MicIcon, GlobeIcon, SparkleIcon, BoltIcon, ShieldIcon, InjectIcon } from './icons'
 import type { LatestRelease } from '@/lib/latest-release'
-
-const GITHUB_URL = 'https://github.com/sinhgiang/wispra'
+import { RELEASES_REPO_URL, SUPPORT_URL } from '@/lib/wispra-releases'
 
 const DEMO_PHRASES = [
   'Schedule the team sync for Monday at 10 AM and send the invite.',
@@ -515,7 +514,7 @@ export default function HomePage({ release }: { release: LatestRelease }) {
             <Link href="/updates" className="hover:text-text-primary transition-colors">
               Updates
             </Link>
-            {([['GitHub', GITHUB_URL], ['Support', `${GITHUB_URL}/issues`]] as [string, string][]).map(([label, href]) => (
+            {([['GitHub', RELEASES_REPO_URL], ['Support', SUPPORT_URL]] as [string, string][]).map(([label, href]) => (
               <Link key={label} href={href} target="_blank" rel="noopener noreferrer"
                 className="hover:text-text-primary transition-colors">
                 {label}

@@ -1,6 +1,7 @@
 import type { Metadata } from 'next'
 import Link from 'next/link'
 import { MicIcon } from '../icons'
+import { RELEASES_URL } from '@/lib/wispra-releases'
 import { getUpdates } from './data'
 import VersionNav from './VersionNav'
 
@@ -11,8 +12,6 @@ export const metadata: Metadata = {
   title: 'Updates — Wispra',
   description: 'What is new in each version of Wispra, with screenshots.',
 }
-
-const GITHUB_URL = 'https://github.com/sinhgiang/wispra'
 
 export default async function UpdatesLayout({ children }: { children: React.ReactNode }) {
   const releases = await getUpdates()
@@ -28,7 +27,7 @@ export default async function UpdatesLayout({ children }: { children: React.Reac
             <span className="font-semibold text-text-primary">Wispra</span>
           </Link>
           <a
-            href={`${GITHUB_URL}/releases/latest`}
+            href={`${RELEASES_URL}/latest`}
             target="_blank"
             rel="noopener noreferrer"
             className="text-sm font-medium px-4 py-1.5 rounded-lg bg-brand hover:bg-brand-dark text-white transition-colors"
@@ -54,7 +53,7 @@ export default async function UpdatesLayout({ children }: { children: React.Reac
       <footer className="border-t border-white/5 py-8">
         <div className="max-w-6xl mx-auto px-4 sm:px-6 flex flex-col sm:flex-row items-center justify-between gap-3 text-sm text-text-muted">
           <Link href="/" className="hover:text-text-primary transition-colors">← Back to wispra</Link>
-          <a href={`${GITHUB_URL}/releases`} target="_blank" rel="noopener noreferrer" className="hover:text-text-primary transition-colors">
+          <a href={RELEASES_URL} target="_blank" rel="noopener noreferrer" className="hover:text-text-primary transition-colors">
             Downloads on GitHub
           </a>
         </div>

@@ -5,7 +5,7 @@ import { mergeReleases, getUpdates } from '@/app/updates/data'
 import { RELEASES } from '@/app/updates/releases'
 import UpdatesPage from '@/app/updates/page'
 
-const DL = 'https://github.com/sinhgiang/wispra/releases/download'
+const DL = 'https://github.com/sinhgiang/wispra-releases/releases/download'
 
 // Real release notes of v0.6.5, as published on GitHub.
 const BODY_065 = `## New
@@ -140,7 +140,7 @@ describe('the /updates page with GitHub', () => {
     const fetchMock = vi.fn().mockResolvedValueOnce(new Response('[]', { status: 200 }))
     vi.stubGlobal('fetch', fetchMock)
     await fetchGitHubReleases()
-    expect(fetchMock.mock.calls[0][0]).toBe('https://api.github.com/repos/sinhgiang/wispra/releases?per_page=100')
+    expect(fetchMock.mock.calls[0][0]).toBe('https://api.github.com/repos/sinhgiang/wispra-releases/releases?per_page=100')
     expect(fetchMock.mock.calls[0][1]).toMatchObject({ next: { revalidate: 3600 } })
   })
 

@@ -9,7 +9,7 @@ as **Latest** and opens at `/updates`; every other version has its own page at
 
 | Source | What | Used for |
 |---|---|---|
-| GitHub releases of [`sinhgiang/wispra`](https://github.com/sinhgiang/wispra/releases) | The release notes, and an asset named `screenshot.png` | Every release that is **not** kept in this repo, in particular each new one |
+| GitHub releases of [`sinhgiang/wispra-releases`](https://github.com/sinhgiang/wispra-releases/releases) | The release notes, and an asset named `screenshot.png` | Every release that is **not** kept in this repo, in particular each new one |
 | `app/updates/releases.ts` + `public/updates/<version>.webp` | Hand-written text and image | 0.1.0 to 0.6.5, and any later release someone chooses to rewrite here |
 
 The site re-reads the GitHub releases at most **once an hour** (`revalidate = 3600`).
@@ -23,7 +23,7 @@ Code: `app/updates/github.ts` (reading and parsing GitHub), `app/updates/data.ts
 
 ## Publishing a release so it shows up well (for the desktop app's release process)
 
-The desktop app's agent (repository `sinhgiang/wispra`, local folder `spetotext`)
+The desktop app's agent (local folder `spetotext`), which publishes every release to `sinhgiang/wispra-releases`,
 does this as part of every release. Nothing needs to happen in wispra-web.
 
 1. **Write the release notes for people who use the app**, in Markdown, with
@@ -60,7 +60,7 @@ does this as part of every release. Nothing needs to happen in wispra-web.
      addresses, Windows user names or file paths. The site is public.
 
    With the GitHub CLI:
-   `gh release upload v0.6.6 screenshot.png -R sinhgiang/wispra`
+   `gh release upload v0.6.6 screenshot.png -R sinhgiang/wispra-releases`
 
 4. Publish the release (not a draft, not a pre-release; those are skipped). The
    tag must look like `v0.6.6`.
