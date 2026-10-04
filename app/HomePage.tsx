@@ -512,7 +512,10 @@ export default function HomePage({ release }: { release: LatestRelease }) {
             <span className="text-xs text-text-muted">{VERSION}</span>
           </div>
           <div className="flex items-center gap-6 text-sm text-text-muted">
-            {([['GitHub', GITHUB_URL], ['Changelog', `${GITHUB_URL}/releases`], ['Support', `${GITHUB_URL}/issues`]] as [string, string][]).map(([label, href]) => (
+            <Link href="/updates" className="hover:text-text-primary transition-colors">
+              Updates
+            </Link>
+            {([['GitHub', GITHUB_URL], ['Support', `${GITHUB_URL}/issues`]] as [string, string][]).map(([label, href]) => (
               <Link key={label} href={href} target="_blank" rel="noopener noreferrer"
                 className="hover:text-text-primary transition-colors">
                 {label}
