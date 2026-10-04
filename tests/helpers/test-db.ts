@@ -80,31 +80,112 @@ const ident = (name: string) => `"${name.replace(/"/g, '""')}"`
 export function fakeSupabase(pg: PGlite): SupabaseClient {
   const client = {
     from(table: string) {
+      const target = `public.${ident(table)}`
+      let mode: 'select' | 'delete' | 'insert' | 'upsert' = 'select'
       let columns = '*'
-      const filters: [string, unknown][] = []
-      const run = async () => {
+      let rows: Record<string, unknown>[] = []
+      let onConflict = ''
+      const filters: { col: string; op: '=' | '<' | 'NOT LIKE'; value: unknown }[] = []
+      let orderBy = ''
+      let limit: number | null = null
+
+      const where = (offset = 0) => {
+        const parts = filters.map((f, i) => `${ident(f.col)} ${f.op} $${i + 1 + offset}`)
+        return parts.length ? ` WHERE ${parts.join(' AND ')}` : ''
+      }
+      const params = () => filters.map(f => f.value)
+
+      const execute = async (): Promise<{ data: unknown; error: { message: string } | null }> => {
         try {
-          const where = filters.map(([col], i) => `${ident(col)} = $${i + 1}`).join(' AND ')
-          const res = await pg.query(
-            `SELECT ${columns} FROM public.${ident(table)}${where ? ` WHERE ${where}` : ''} LIMIT 1`,
-            filters.map(([, value]) => value)
-          )
-          return { data: res.rows[0] ?? null, error: null }
+          if (mode === 'select') {
+            const res = await pg.query(
+              `SELECT ${columns} FROM ${target}${where()}${orderBy}${limit !== null ? ` LIMIT ${limit}` : ''}`,
+              params()
+            )
+            return { data: res.rows, error: null }
+          }
+          if (mode === 'delete') {
+            await pg.query(`DELETE FROM ${target}${where()}`, params())
+            return { data: null, error: null }
+          }
+          // insert / upsert: one statement per row keeps the SQL simple.
+          await pg.exec('BEGIN')
+          try {
+            for (const row of rows) {
+              const cols = Object.keys(row)
+              const values = cols.map((_, i) => `$${i + 1}`).join(', ')
+              let sql = `INSERT INTO ${target} (${cols.map(ident).join(', ')}) VALUES (${values})`
+              if (mode === 'upsert') {
+                const keys = onConflict.split(',').map(c => c.trim())
+                const updates = cols.filter(c => !keys.includes(c)).map(c => `${ident(c)} = EXCLUDED.${ident(c)}`)
+                sql += ` ON CONFLICT (${keys.map(ident).join(', ')}) DO ${updates.length ? `UPDATE SET ${updates.join(', ')}` : 'NOTHING'}`
+              }
+              await pg.query(sql, cols.map(c => row[c]))
+            }
+            await pg.exec('COMMIT')
+          } catch (err) {
+            await pg.exec('ROLLBACK')
+            throw err
+          }
+          return { data: null, error: null }
         } catch (err) {
           return { data: null, error: { message: (err as Error).message } }
         }
       }
+
+      const first = async () => {
+        limit = 1
+        const res = await execute()
+        return { data: Array.isArray(res.data) ? (res.data[0] ?? null) : null, error: res.error }
+      }
+
       const query = {
-        select(cols: string) {
+        select(cols = '*') {
           columns = cols
           return query
         },
-        eq(col: string, value: unknown) {
-          filters.push([col, value])
+        delete() {
+          mode = 'delete'
           return query
         },
-        maybeSingle: run,
-        single: run,
+        insert(data: Record<string, unknown> | Record<string, unknown>[]) {
+          mode = 'insert'
+          rows = Array.isArray(data) ? data : [data]
+          return query
+        },
+        upsert(data: Record<string, unknown> | Record<string, unknown>[], options?: { onConflict?: string }) {
+          mode = 'upsert'
+          rows = Array.isArray(data) ? data : [data]
+          onConflict = options?.onConflict ?? ''
+          return query
+        },
+        eq(col: string, value: unknown) {
+          filters.push({ col, op: '=', value })
+          return query
+        },
+        lt(col: string, value: unknown) {
+          filters.push({ col, op: '<', value })
+          return query
+        },
+        not(col: string, operator: string, value: unknown) {
+          if (operator !== 'like') throw new Error(`fakeSupabase: not(${operator}) is not supported`)
+          filters.push({ col, op: 'NOT LIKE', value })
+          return query
+        },
+        order(col: string, options?: { ascending?: boolean }) {
+          const dir = options?.ascending === false ? 'DESC' : 'ASC'
+          orderBy = orderBy ? `${orderBy}, ${ident(col)} ${dir}` : ` ORDER BY ${ident(col)} ${dir}`
+          return query
+        },
+        limit(n: number) {
+          limit = n
+          return query
+        },
+        maybeSingle: first,
+        single: first,
+        then(resolve: (value: unknown) => unknown, reject?: (reason: unknown) => unknown) {
+          return execute().then(resolve, reject)
+        },
       }
       return query
     },
