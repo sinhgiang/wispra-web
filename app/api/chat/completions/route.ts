@@ -19,6 +19,74 @@ const ALLOWED_MODELS = new Set([
 
 const DEFAULT_MODEL = 'openai/gpt-oss-120b'
 
+// The desktop app waits 60 s for an AI call; give Groq a little less, so a slow
+// answer still arrives instead of the proxy giving up first.
+const GROQ_TIMEOUT_MS = 55_000
+
+/** JSON mode is passed on; any other response_format is dropped. */
+function allowedResponseFormat(value: unknown): { type: 'json_object' } | undefined {
+  const type = (value as { type?: unknown } | null | undefined)?.type
+  return type === 'json_object' ? { type: 'json_object' } : undefined
+}
+
+/** Groq's rate-limit headers, passed back so the app can wait the right time. */
+function rateLimitHeaders(from: Headers): Headers {
+  const out = new Headers()
+  from.forEach((value, name) => {
+    if (name === 'retry-after' || name.startsWith('x-ratelimit-')) out.set(name, value)
+  })
+  return out
+}
+
+/**
+ * One line per AI call in the server log, so a failure reported by a user can be
+ * traced to what Groq answered. Sizes and status only: never the text of a prompt
+ * or an answer, never the user. Groq's error message is kept (it carries no user
+ * content: limits, model, request size).
+ */
+function logCall(call: {
+  status: number | 'timeout' | 'network-error'
+  model: string | undefined
+  jsonMode: boolean
+  maxTokens: number
+  messages: unknown[]
+  started: number
+  result?: unknown
+  errorText?: string
+}): void {
+  const data = call.result as
+    | { usage?: { prompt_tokens?: number; completion_tokens?: number }; choices?: { finish_reason?: string; message?: { content?: string } }[] }
+    | null
+    | undefined
+  const choice = data?.choices?.[0]
+  const line = {
+    route: 'chat/completions',
+    status: call.status,
+    model: call.model,
+    jsonMode: call.jsonMode,
+    maxTokens: call.maxTokens,
+    promptChars: JSON.stringify(call.messages).length,
+    promptTokens: data?.usage?.prompt_tokens,
+    completionTokens: data?.usage?.completion_tokens,
+    finishReason: choice?.finish_reason,
+    answerChars: typeof choice?.message?.content === 'string' ? choice.message.content.length : undefined,
+    ms: Date.now() - call.started,
+    ...(call.errorText ? { groqError: groqErrorMessage(call.errorText) } : {}),
+  }
+  if (typeof call.status === 'number' && call.status < 400) console.info('[ai-call]', JSON.stringify(line))
+  else console.error('[ai-call]', JSON.stringify(line))
+}
+
+/** Groq's error message (limits, model, sizes), without any failed generation text. */
+function groqErrorMessage(text: string): string {
+  try {
+    const error = (JSON.parse(text) as { error?: { message?: unknown; code?: unknown; type?: unknown } }).error
+    const parts = [error?.code, error?.type, error?.message].filter(p => typeof p === 'string')
+    if (parts.length) return parts.join(' | ').slice(0, 400)
+  } catch { /* not JSON */ }
+  return text.slice(0, 200)
+}
+
 /** Tokens Groq billed for this call (prompt + completion), or null if it did not say. */
 function billedTokens(payload: unknown): number | null {
   const usage = (payload as { usage?: Record<string, unknown> } | null)?.usage
@@ -54,6 +122,7 @@ export async function POST(req: NextRequest) {
     max_tokens?: number
     temperature?: number
     stream?: boolean
+    response_format?: unknown
   }
   try {
     body = await req.json()
@@ -100,6 +169,11 @@ export async function POST(req: NextRequest) {
   }
 
   // ── Forward to Groq ─────────────────────────────────────────────────────────
+  // Behave like a direct Groq call, so the app handles both paths the same way:
+  // JSON mode is passed on, and Groq's rate-limit headers come back.
+  const responseFormat = allowedResponseFormat(body.response_format)
+  const maxTokens = body.max_tokens ?? 8192
+  const started = Date.now()
   let groqResponse: Response
   let text: string
   try {
@@ -112,17 +186,17 @@ export async function POST(req: NextRequest) {
       body: JSON.stringify({
         model,
         messages: body.messages,
-        max_tokens: body.max_tokens ?? 8192,
+        max_tokens: maxTokens,
         temperature: body.temperature ?? 0,
+        ...(responseFormat ? { response_format: responseFormat } : {}),
       }),
-      signal: AbortSignal.timeout(35_000),
+      signal: AbortSignal.timeout(GROQ_TIMEOUT_MS),
     })
     text = await groqResponse.text()
   } catch (err) {
-    const msg =
-      err instanceof Error && err.name === 'TimeoutError'
-        ? 'AI request timed out'
-        : 'Network error contacting AI service'
+    const timedOut = err instanceof Error && err.name === 'TimeoutError'
+    logCall({ status: timedOut ? 'timeout' : 'network-error', model, jsonMode: !!responseFormat, maxTokens, messages: body.messages, started })
+    const msg = timedOut ? 'AI request timed out' : 'Network error contacting AI service'
     return NextResponse.json({ error: msg }, { status: 503 })
   }
 
@@ -139,13 +213,26 @@ export async function POST(req: NextRequest) {
     billedTokens(result) ?? (groqResponse.ok ? estimateTokens(body.messages, text) : 0)
   await recordAiTokens(supabase, userId, quota.month, tokens)
 
+  logCall({
+    status: groqResponse.status,
+    model,
+    jsonMode: !!responseFormat,
+    maxTokens,
+    messages: body.messages,
+    started,
+    result,
+    errorText: groqResponse.ok ? undefined : text,
+  })
+
+  const headers = rateLimitHeaders(groqResponse.headers)
+
   if (!groqResponse.ok) {
-    return NextResponse.json({ error: text }, { status: groqResponse.status })
+    return NextResponse.json({ error: text }, { status: groqResponse.status, headers })
   }
 
   if (result === null) {
     return NextResponse.json({ error: 'Invalid response from AI service' }, { status: 502 })
   }
 
-  return NextResponse.json(result)
+  return NextResponse.json(result, { headers })
 }
