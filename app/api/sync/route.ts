@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createAdminClient, validateToken } from '@/lib/supabase-server'
 import { MOBILE_ID_PREFIX } from '@/lib/history'
+import { getDeletions, isDeleted } from '@/lib/history-deletions'
 
 interface HistoryRow {
   id: string
@@ -65,12 +66,23 @@ export async function POST(req: NextRequest) {
 
   const supabase = createAdminClient()
   const synced = { history: 0, lexicon: 0, meetings: 0 }
+  /** History entries sent but not stored because they were deleted on some device. */
+  let historySkipped = 0
 
   // History: full replace of the desktop's entries — the desktop app always sends
   // its complete local snapshot (capped at 100 entries there), never a partial diff.
   // Entries from the mobile app (id starting with MOBILE_ID_PREFIX, added through
   // /api/history/merge) are not the desktop's to replace and are kept.
   if (body.history) {
+    // Entries deleted on any device (or created before the last "delete everything")
+    // are not stored again, even though this desktop may not know of the deletion yet.
+    // Read before anything is touched: if it fails, nothing is deleted or written.
+    const deletionsResult = await getDeletions(supabase, userId)
+    if (!deletionsResult.ok) {
+      return NextResponse.json({ error: `History sync failed: ${deletionsResult.error}` }, { status: 500 })
+    }
+    const deletions = deletionsResult.deletions
+
     const { error: deleteError } = await supabase
       .from('synced_history')
       .delete()
@@ -79,8 +91,9 @@ export async function POST(req: NextRequest) {
     if (deleteError) {
       return NextResponse.json({ error: `History sync failed: ${deleteError.message}` }, { status: 500 })
     }
-    if (body.history.length > 0) {
-      const rows = body.history.map((entry) => ({
+    const kept = body.history.filter((entry) => !isDeleted(entry, deletions))
+    if (kept.length > 0) {
+      const rows = kept.map((entry) => ({
         user_id: userId,
         id: entry.id,
         text: entry.text,
@@ -96,7 +109,8 @@ export async function POST(req: NextRequest) {
         return NextResponse.json({ error: `History sync failed: ${insertError.message}` }, { status: 500 })
       }
     }
-    synced.history = body.history.length
+    synced.history = kept.length
+    historySkipped = body.history.length - kept.length
   }
 
   // Lexicon: full replace, same rationale as History (capped at 500 entries locally).
@@ -152,5 +166,5 @@ export async function POST(req: NextRequest) {
     synced.meetings = body.meetings.length
   }
 
-  return NextResponse.json({ ok: true, synced })
+  return NextResponse.json({ ok: true, synced, ...(historySkipped > 0 ? { historySkipped } : {}) })
 }
