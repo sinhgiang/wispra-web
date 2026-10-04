@@ -1,19 +1,27 @@
 import type { Metadata } from 'next'
 import { notFound, redirect } from 'next/navigation'
-import { LATEST, RELEASES, findRelease } from '../releases'
+import { RELEASES } from '../releases'
+import { getUpdates } from '../data'
 import ReleaseView from '../ReleaseView'
 
 type Props = { params: Promise<{ version: string }> }
 
-// Only the versions listed in releases.ts exist; anything else is a 404.
-export const dynamicParams = false
+// Versions kept in the repo are built ahead; a newer one published on GitHub is
+// built the first time someone opens it, then kept and re-checked hourly.
+export const revalidate = 3600
+export const dynamicParams = true
 
 export function generateStaticParams() {
   return RELEASES.map(r => ({ version: r.version }))
 }
 
+async function find(version: string) {
+  const releases = await getUpdates()
+  return { releases, release: releases.find(r => r.version === version) }
+}
+
 export async function generateMetadata({ params }: Props): Promise<Metadata> {
-  const release = findRelease((await params).version)
+  const { release } = await find((await params).version)
   if (!release) return {}
   return {
     title: `Wispra v${release.version}: ${release.title}`,
@@ -22,9 +30,9 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
 }
 
 export default async function VersionPage({ params }: Props) {
-  const release = findRelease((await params).version)
+  const { releases, release } = await find((await params).version)
   if (!release) notFound()
   // The latest version lives at /updates.
-  if (release === LATEST) redirect('/updates')
-  return <ReleaseView release={release} />
+  if (release.version === releases[0].version) redirect('/updates')
+  return <ReleaseView release={release} releases={releases} />
 }

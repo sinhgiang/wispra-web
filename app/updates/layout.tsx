@@ -1,8 +1,11 @@
 import type { Metadata } from 'next'
 import Link from 'next/link'
 import { MicIcon } from '../icons'
-import { LATEST } from './releases'
+import { getUpdates } from './data'
 import VersionNav from './VersionNav'
+
+// Re-read the releases on GitHub at most once an hour.
+export const revalidate = 3600
 
 export const metadata: Metadata = {
   title: 'Updates — Wispra',
@@ -11,7 +14,9 @@ export const metadata: Metadata = {
 
 const GITHUB_URL = 'https://github.com/sinhgiang/wispra'
 
-export default function UpdatesLayout({ children }: { children: React.ReactNode }) {
+export default async function UpdatesLayout({ children }: { children: React.ReactNode }) {
+  const releases = await getUpdates()
+  const latest = releases[0]
   return (
     <div className="min-h-screen flex flex-col">
       <header className="sticky top-0 z-30 border-b border-white/5 bg-bg-base/80 backdrop-blur-xl">
@@ -28,7 +33,7 @@ export default function UpdatesLayout({ children }: { children: React.ReactNode 
             rel="noopener noreferrer"
             className="text-sm font-medium px-4 py-1.5 rounded-lg bg-brand hover:bg-brand-dark text-white transition-colors"
           >
-            Download v{LATEST.version}
+            Download v{latest.version}
           </a>
         </div>
       </header>
@@ -41,7 +46,7 @@ export default function UpdatesLayout({ children }: { children: React.ReactNode 
         </div>
 
         <div className="lg:grid lg:grid-cols-[240px_minmax(0,1fr)] lg:gap-10">
-          <VersionNav />
+          <VersionNav items={releases.map(r => ({ version: r.version, date: r.date }))} />
           <main className="min-w-0">{children}</main>
         </div>
       </div>

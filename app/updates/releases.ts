@@ -1,6 +1,8 @@
 // What changed in each Wispra release, written for people who use the app.
-// Newest first: the first entry is shown as "Latest" and opens at /updates.
-// How to add a release: see docs/UPDATES.md.
+// Newest first. These entries are kept in the repo with their own images; a
+// newer release published on GitHub shows up on /updates by itself (see
+// data.ts and github.ts), and an entry here always wins over GitHub's for the
+// same version. How releases reach the page: see docs/UPDATES.md.
 
 export interface Release {
   /** Without the "v", e.g. '0.6.5'. Also the URL (/updates/0.6.5) and the image name. */
