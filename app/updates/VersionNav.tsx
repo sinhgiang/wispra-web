@@ -3,12 +3,18 @@
 import { useEffect, useRef } from 'react'
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
-import { LATEST, RELEASES, formatReleaseDate } from './releases'
+import { formatReleaseDate } from './releases'
+import { hrefFor } from './links'
+
+export interface NavItem {
+  version: string
+  date: string
+}
 
 /** Which version the current URL shows: /updates is the latest one. */
-function activeVersion(pathname: string): string {
+function activeVersion(pathname: string, latest: string): string {
   const match = pathname.match(/^\/updates\/([^/]+)/)
-  return match ? decodeURIComponent(match[1]) : LATEST.version
+  return match ? decodeURIComponent(match[1]) : latest
 }
 
 /**
@@ -16,8 +22,9 @@ function activeVersion(pathname: string): string {
  * scrolls sideways on phones and tablets. Lives in the layout, so it keeps its
  * scroll position while you click through versions.
  */
-export default function VersionNav() {
-  const active = activeVersion(usePathname())
+export default function VersionNav({ items }: { items: NavItem[] }) {
+  const latest = items[0]?.version ?? ''
+  const active = activeVersion(usePathname(), latest)
   const chipsRef = useRef<HTMLDivElement>(null)
 
   // Keep the selected chip in view on small screens.
@@ -33,12 +40,13 @@ export default function VersionNav() {
         ref={chipsRef}
         className="lg:hidden -mx-4 sm:-mx-6 px-4 sm:px-6 flex gap-2 overflow-x-auto pb-2 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
       >
-        {RELEASES.map(r => {
+        {items.map(r => {
           const isActive = r.version === active
+          const isLatest = r.version === latest
           return (
             <Link
               key={r.version}
-              href={r === LATEST ? '/updates' : `/updates/${r.version}`}
+              href={hrefFor(r.version, latest)}
               aria-current={isActive ? 'page' : undefined}
               className={`shrink-0 rounded-full border px-3.5 py-1.5 text-sm font-medium transition-colors ${
                 isActive
@@ -47,7 +55,7 @@ export default function VersionNav() {
               }`}
             >
               v{r.version}
-              {r === LATEST && <span className={`ml-1.5 text-[11px] ${isActive ? 'text-white/80' : 'text-[#27C93F]'}`}>Latest</span>}
+              {isLatest && <span className={`ml-1.5 text-[11px] ${isActive ? 'text-white/80' : 'text-[#27C93F]'}`}>Latest</span>}
             </Link>
           )
         })}
@@ -56,12 +64,12 @@ export default function VersionNav() {
       {/* Large screens: sticky column */}
       <div className="hidden lg:block sticky top-20 max-h-[calc(100vh-6rem)] overflow-y-auto pr-2 -mr-2">
         <ul className="space-y-0.5 border-l border-white/5">
-          {RELEASES.map(r => {
+          {items.map(r => {
             const isActive = r.version === active
             return (
               <li key={r.version}>
                 <Link
-                  href={r === LATEST ? '/updates' : `/updates/${r.version}`}
+                  href={hrefFor(r.version, latest)}
                   aria-current={isActive ? 'page' : undefined}
                   className={`group -ml-px flex items-center justify-between gap-3 border-l-2 py-2 pl-4 pr-2 rounded-r-lg transition-colors ${
                     isActive
@@ -75,7 +83,7 @@ export default function VersionNav() {
                     </span>
                     <span className="block text-xs text-text-muted">{formatReleaseDate(r.date)}</span>
                   </span>
-                  {r === LATEST && <LatestBadge />}
+                  {r.version === latest && <LatestBadge />}
                 </Link>
               </li>
             )

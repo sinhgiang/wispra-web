@@ -16,7 +16,7 @@
 <p align="center">
   <a href="https://wispra-web.vercel.app">Website</a> ·
   <a href="https://github.com/sinhgiang/wispra/releases/latest">Download</a> ·
-  <a href="https://github.com/sinhgiang/wispra/releases">Release notes</a> ·
+  <a href="https://wispra-web.vercel.app/updates">Updates</a> ·
   <a href="https://github.com/sinhgiang/wispra/issues">Support</a>
 </p>
 
@@ -210,6 +210,7 @@ rotated or revoked at any time; only a hash of it is stored on the server.
 | Part | Path | What it does |
 |---|---|---|
 | Website | `app/page.tsx` | Landing page: features, who it is for, comparison, FAQ, download |
+| Updates | `app/updates` | One page per desktop release with its notes and screenshot; new releases come from GitHub by themselves |
 | Sign-in hand-off | `app/auth/callback`, `app/auth/relay` | Completes sign-in in the browser and hands the session back to the desktop app through the `wispra://` link |
 | Transcription | `app/api/transcribe` | Forwards audio to Groq with the server key; enforces the Free plan's monthly minutes |
 | AI text | `app/api/chat/completions` | Forwards chat completions to Groq with a whitelist of models; enforces the monthly AI allowance |
@@ -297,11 +298,30 @@ values, then `npm run dev`. `npm test` runs the test suite, and `npm run build` 
 production database differs from `supabase/migrations/001_initial.sql` in places; read
 [supabase/PRODUCTION_DRIFT.md](supabase/PRODUCTION_DRIFT.md) before writing a migration.
 
+### New releases on the Updates page
+
+[wispra-web.vercel.app/updates](https://wispra-web.vercel.app/updates) reads the releases of
+[`sinhgiang/wispra`](https://github.com/sinhgiang/wispra/releases) from GitHub and re-checks them every hour. A
+new version therefore appears there **without any change to this repository and without a deploy**, as long as
+the release is published like this (the desktop app's release process does it on every release):
+
+1. **Release notes for users**, in Markdown: an optional one-line summary, then `## New`, `## Improved` and
+   `## Fixed` with `- ` bullets, each starting with a short **bold lead**.
+2. **A headline in the release title**: `v0.6.6 — Mind maps you can edit`.
+3. **A screenshot attached as `screenshot.png`**: 1600 × 1000, dark mode, showing what changed, with
+   **sample content only** (no real names, recordings, email addresses or file paths):
+   `gh release upload v0.6.6 screenshot.png -R sinhgiang/wispra`.
+4. **Published** (not a draft or pre-release), with a tag like `v0.6.6`.
+
+The release is on the page, marked Latest, within an hour. Versions 0.1.0 to 0.6.5 are kept in this repository
+with hand-written text and images, and those entries take precedence over GitHub's. Details, and how to rewrite
+an entry here: [docs/UPDATES.md](docs/UPDATES.md).
+
 ## Get started
 
 Wispra is live at **[wispra-web.vercel.app](https://wispra-web.vercel.app)**.
 
 - See what it does: [wispra-web.vercel.app](https://wispra-web.vercel.app)
 - Download the latest version: [github.com/sinhgiang/wispra/releases/latest](https://github.com/sinhgiang/wispra/releases/latest)
-- Read what changed in each version: [release notes](https://github.com/sinhgiang/wispra/releases)
+- Read what changed in each version: [wispra-web.vercel.app/updates](https://wispra-web.vercel.app/updates)
 - Report a problem or ask a question: [issues](https://github.com/sinhgiang/wispra/issues)
