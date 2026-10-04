@@ -185,6 +185,25 @@ describe('backup model when gpt-oss-120b reaches its daily limit', () => {
     expect(fetchMock).toHaveBeenCalledTimes(2)
   })
 
+  it("logs the server key's limits from Groq's headers", async () => {
+    const res = ok(MAIN, 900)
+    const headers = new Headers(res.headers)
+    headers.set('x-ratelimit-limit-requests', '1000')
+    headers.set('x-ratelimit-remaining-requests', '987')
+    headers.set('x-ratelimit-limit-tokens', '8000')
+    headers.set('x-ratelimit-remaining-tokens', '7100')
+    fetchMock.mockResolvedValueOnce(new Response(await res.text(), { status: 200, headers }))
+
+    await chat()
+
+    expect(aiCallLines()[0].limits).toEqual({
+      requestsPerDay: 1000,
+      requestsLeftToday: 987,
+      tokensPerMinute: 8000,
+      tokensLeftThisMinute: 7100,
+    })
+  })
+
   it('a normal answer from gpt-oss-120b is unchanged and not marked', async () => {
     fetchMock.mockResolvedValueOnce(ok(MAIN, 900))
 

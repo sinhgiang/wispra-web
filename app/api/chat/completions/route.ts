@@ -70,6 +70,8 @@ function logCall(call: {
   errorText?: string
   /** Set on the second call: the model whose daily limit sent us to this backup. */
   backupFor?: string
+  /** What Groq's rate-limit headers say about the server key. */
+  limits?: Record<string, number>
 }): void {
   const data = call.result as
     | { usage?: { prompt_tokens?: number; completion_tokens?: number }; choices?: { finish_reason?: string; message?: { content?: string } }[] }
@@ -89,10 +91,31 @@ function logCall(call: {
     answerChars: typeof choice?.message?.content === 'string' ? choice.message.content.length : undefined,
     ms: Date.now() - call.started,
     ...(call.backupFor ? { backupFor: call.backupFor } : {}),
+    ...(call.limits && Object.keys(call.limits).length ? { limits: call.limits } : {}),
     ...(call.errorText ? { groqError: groqErrorMessage(call.errorText) } : {}),
   }
   if (typeof call.status === 'number' && call.status < 400) console.info('[ai-call]', JSON.stringify(line))
   else console.error('[ai-call]', JSON.stringify(line))
+}
+
+/**
+ * Groq's rate-limit headers as numbers: requests per day (limit and left today)
+ * and tokens per minute (limit and left this minute). Groq does not send the
+ * tokens left today; that only shows in a daily-limit error.
+ */
+function groqLimits(headers: Headers): Record<string, number> {
+  const fields: [string, string][] = [
+    ['requestsPerDay', 'x-ratelimit-limit-requests'],
+    ['requestsLeftToday', 'x-ratelimit-remaining-requests'],
+    ['tokensPerMinute', 'x-ratelimit-limit-tokens'],
+    ['tokensLeftThisMinute', 'x-ratelimit-remaining-tokens'],
+  ]
+  const out: Record<string, number> = {}
+  for (const [key, header] of fields) {
+    const value = Number(headers.get(header))
+    if (headers.has(header) && Number.isFinite(value)) out[key] = value
+  }
+  return out
 }
 
 /** Groq's error message (limits, model, sizes), without any failed generation text. */
@@ -233,7 +256,7 @@ export async function POST(req: NextRequest) {
     const tokens = billedTokens(result) ?? (response.ok ? estimateTokens(messages, text) : 0)
     await recordAiTokens(supabase, userId, quota.month, tokens)
 
-    logCall({ ...log, status: response.status, result, errorText: response.ok ? undefined : text })
+    logCall({ ...log, status: response.status, result, errorText: response.ok ? undefined : text, limits: groqLimits(response.headers) })
     return { response, text, result }
   }
 
