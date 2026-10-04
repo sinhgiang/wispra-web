@@ -92,7 +92,9 @@ Response `200`:
   oldest first. Delete these ids on this device too.
 - `clearedAt`: when the whole history was last deleted (server clock), or `null`.
   Do **not** compare it directly with local `createdAt` values: see "Clocks" below.
-- `serverTime`: keep it and send it as `since` next time.
+- `serverTime`: keep it and send it as `since` next time. Deletion marks are never
+  removed, so without `since` the `deleted` list grows with every deletion of the
+  account; always send `since` after the first read.
 
 Errors: `400` for a bad `limit`, `before` or `since`, `401` without a valid token,
 `500` if the history or the deletions could not be read. On `500`, keep the old

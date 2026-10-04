@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createAdminClient, validateToken } from '@/lib/supabase-server'
 import { fromRow, HISTORY_PAGE_DEFAULT, HISTORY_PAGE_MAX } from '@/lib/history'
 import { CLEAR_ALL_ID, getDeletions, recordDeletions } from '@/lib/history-deletions'
+import { readAllPages } from '@/lib/supabase-paging'
 
 /** The signed-in user's id, or a 401 response. */
 async function signedInUser(req: NextRequest): Promise<string | NextResponse> {
@@ -96,16 +97,20 @@ export async function DELETE(req: NextRequest) {
   const supabase = createAdminClient()
   const clearedAt = new Date().toISOString()
 
-  const { data: existing, error: listError } = await supabase.from('synced_history').select('id').eq('user_id', userId)
+  // Every id, paged: Supabase returns at most 1000 rows per select, and an entry
+  // left without its own mark could come back from a device with a fast clock.
+  const { data: existing, error: listError } = await readAllPages<{ id: string }, { message: string }>((from, to) =>
+    supabase.from('synced_history').select('id').eq('user_id', userId).order('id', { ascending: true }).range(from, to)
+  )
   if (listError) {
     return NextResponse.json({ error: `Could not delete history: ${listError.message}` }, { status: 500 })
   }
-  const ids = ((existing ?? []) as { id: string }[]).map(row => row.id)
+  const ids = existing.map(row => row.id)
 
   // The marks first: if they cannot be written, nothing is deleted (a deletion other
   // devices never hear of would come back with their next sync). Every entry in the
   // cloud gets its own mark, so it stays deleted whatever the clocks say; the clear
-  // mark covers entries the server has not seen yet.
+  // mark covers entries the server has not seen yet and is written last.
   const { error: markError } = await recordDeletions(supabase, userId, [...ids, CLEAR_ALL_ID], clearedAt)
   if (markError) {
     return NextResponse.json({ error: `Could not delete history: ${markError.message}` }, { status: 500 })
