@@ -40,7 +40,12 @@ export async function POST(req: NextRequest) {
 
   // Entries deleted on any device (or created before the last "delete everything")
   // are skipped, so a phone that has not heard of a deletion cannot bring one back.
-  const deletions = await getDeletions(supabase, userId)
+  const deletionsResult = await getDeletions(supabase, userId)
+  if (!deletionsResult.ok) {
+    // Not knowing what was deleted, storing could bring a deleted entry back: store nothing.
+    return NextResponse.json({ error: `Could not merge history: ${deletionsResult.error}` }, { status: 500 })
+  }
+  const deletions = deletionsResult.deletions
   const kept = [...byId.values()].filter(entry => !isDeleted(entry, deletions))
   const skipped = byId.size - kept.length
 

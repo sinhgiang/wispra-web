@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createAdminClient, validateToken } from '@/lib/supabase-server'
-import { CLEAR_ALL_ID, recordDeletion } from '@/lib/history-deletions'
+import { CLEAR_ALL_ID, recordDeletions } from '@/lib/history-deletions'
 
 type Props = { params: Promise<{ id: string }> }
 
@@ -29,7 +29,7 @@ export async function DELETE(req: NextRequest, { params }: Props) {
 
   // The mark first: if it cannot be written, nothing is deleted (a deletion other
   // devices never hear of would come back with their next sync).
-  const { error: markError } = await recordDeletion(supabase, userId, id, new Date().toISOString())
+  const { error: markError } = await recordDeletions(supabase, userId, [id], new Date().toISOString())
   if (markError) {
     return NextResponse.json({ error: `Could not delete the entry: ${markError.message}` }, { status: 500 })
   }

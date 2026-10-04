@@ -90,11 +90,13 @@ Response `200`:
   the entry.
 - `deleted`: entries deleted on any device of this account (see "Deleting" below),
   oldest first. Delete these ids on this device too.
-- `clearedAt`: when the whole history was last deleted, or `null`. Delete every
-  local entry created at or before it.
+- `clearedAt`: when the whole history was last deleted (server clock), or `null`.
+  Do **not** compare it directly with local `createdAt` values: see "Clocks" below.
 - `serverTime`: keep it and send it as `since` next time.
 
-Errors: `400` for a bad `limit`, `before` or `since`, `401` without a valid token.
+Errors: `400` for a bad `limit`, `before` or `since`, `401` without a valid token,
+`500` if the history or the deletions could not be read. On `500`, keep the old
+`since`: moving past it could miss deletions.
 
 Known limit: entries that share exactly the same `createdAt` as the last entry of
 a page may be skipped on the next page.
@@ -142,10 +144,16 @@ server keeps a mark for each deleted id (ids and times only, never the text), so
 
 1. the other devices learn of it from `deleted` / `clearedAt` in `GET /api/history`;
 2. a device that has not heard of it yet cannot bring it back: `POST /api/sync`
-   and `POST /api/history/merge` skip deleted ids, and entries created at or
-   before the last "delete everything".
+   and `POST /api/history/merge` skip deleted ids, and entries from before the last
+   "delete everything" (see "Clocks").
 
 A deleted id stays deleted: do not reuse ids.
+
+If the server cannot read the deletions (a database error), `POST /api/sync` and
+`POST /api/history/merge` answer `500` and change nothing: storing history without
+knowing what was deleted could bring deleted entries back. Retry later. (Before
+migration 008 is applied the deletions table does not exist; only that case is
+treated as "nothing deleted".)
 
 ### DELETE /api/history/{id}
 
@@ -165,8 +173,44 @@ exactly `{ "all": true }`; anything else gets `400`, so a stray request cannot w
 the history.
 
 Response `200`: `{ "ok": true, "deleted": 42, "clearedAt": "2026-10-05T12:30:00.000Z" }`.
-Every device then deletes its local entries created at or before `clearedAt`.
-Errors: `400`, `401`, `500` as above.
+Every entry that was in the cloud gets its own deletion mark (so the other devices
+receive all their ids in `deleted`), and `clearedAt` records the moment for entries
+the server has not seen. Errors: `400`, `401`, `500` as above.
+
+### Clocks: "delete everything" and entries the server has not seen
+
+`createdAt` comes from each device's clock; `clearedAt` comes from the server's.
+They can disagree by seconds or minutes. If a device's clock runs behind, a
+dictation made just after the clear can carry a `createdAt` earlier than
+`clearedAt`, and comparing the two would throw that new dictation away.
+
+What the server does:
+
+- Entries that were in the cloud when the history was cleared are blocked by
+  **their own id**, whatever their `createdAt`.
+- For entries it never saw, it uses time only with a **5-minute safety margin**: it
+  drops an entry only if `createdAt` is at least 5 minutes before `clearedAt`. A
+  dictation stamped by a clock up to 5 minutes slow is kept. The cost: an entry
+  made on another device in the last 5 minutes before the clear, and not synced
+  before it, survives the clear.
+
+What each app must do with a new `clearedAt` (one it has not handled yet):
+
+1. Delete locally every id listed in `deleted` (the clear lists all of them).
+2. For local entries that were never sent to the cloud, convert `clearedAt` to the
+   device's own clock before comparing, using the `serverTime` of the same answer:
+
+   ```
+   localClear = localTimeWhenTheAnswerArrived - (serverTime - clearedAt)
+   ```
+
+   Delete those local entries created before `localClear`. Never compare
+   `clearedAt` with a local `createdAt` directly.
+3. Remember this `clearedAt` as handled, so it is not applied again (a later
+   answer carries the same value until the next clear).
+
+The device that performed the clear simply deletes everything it had at that
+moment.
 
 ### What each app does
 
@@ -177,8 +221,8 @@ Errors: `400`, `401`, `500` as above.
 - Call the delete route; when it answers `200`, delete the entry (or everything)
   locally.
 - Each time history is read, send `since` = the last `serverTime`; delete locally
-  every id in `deleted`, and, if `clearedAt` is newer than the last one handled,
-  every local entry created at or before it.
+  every id in `deleted`, and handle a new `clearedAt` as described in "Clocks".
+  Only store the new `serverTime` after the answer was handled.
 - An app that keeps a local copy and syncs it (the desktop) should do this before
   its next sync. If it does not, the deleted entries are simply skipped by the
   server, but they stay on that device.

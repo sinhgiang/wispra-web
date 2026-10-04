@@ -95,7 +95,7 @@ export function fakeSupabase(pg: PGlite): SupabaseClient {
       }
       const params = () => filters.map(f => f.value)
 
-      const execute = async (): Promise<{ data: unknown; error: { message: string } | null }> => {
+      const execute = async (): Promise<{ data: unknown; error: { message: string; code?: string } | null }> => {
         try {
           if (mode === 'select') {
             const res = await pg.query(
@@ -129,7 +129,7 @@ export function fakeSupabase(pg: PGlite): SupabaseClient {
           }
           return { data: null, error: null }
         } catch (err) {
-          return { data: null, error: { message: (err as Error).message } }
+          return { data: null, error: { message: (err as Error).message, code: (err as { code?: string }).code } }
         }
       }
 

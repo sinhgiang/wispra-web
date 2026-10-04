@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createAdminClient, validateToken } from '@/lib/supabase-server'
 import { fromRow, HISTORY_PAGE_DEFAULT, HISTORY_PAGE_MAX } from '@/lib/history'
-import { CLEAR_ALL_ID, getDeletions, recordDeletion } from '@/lib/history-deletions'
+import { CLEAR_ALL_ID, getDeletions, recordDeletions } from '@/lib/history-deletions'
 
 /** The signed-in user's id, or a 401 response. */
 async function signedInUser(req: NextRequest): Promise<string | NextResponse> {
@@ -47,7 +47,7 @@ export async function GET(req: NextRequest) {
   // Always scoped to the token's user: there is no way to ask for someone else's rows.
   let query = supabase.from('synced_history').select('*').eq('user_id', userId)
   if (before !== null) query = query.lt('created_at', new Date(before).toISOString())
-  const [{ data, error }, deletions] = await Promise.all([
+  const [{ data, error }, deletionsResult] = await Promise.all([
     query
       .order('created_at', { ascending: false })
       .order('id', { ascending: false })
@@ -58,6 +58,11 @@ export async function GET(req: NextRequest) {
   if (error) {
     return NextResponse.json({ error: `Could not read history: ${error.message}` }, { status: 500 })
   }
+  // Without the deletions a device would move its `since` past them and never hear of them.
+  if (!deletionsResult.ok) {
+    return NextResponse.json({ error: `Could not read deleted entries: ${deletionsResult.error}` }, { status: 500 })
+  }
+  const deletions = deletionsResult.deletions
 
   const rows = (data ?? []) as Parameters<typeof fromRow>[0][]
   const page = rows.slice(0, limit).map(fromRow)
@@ -91,21 +96,25 @@ export async function DELETE(req: NextRequest) {
   const supabase = createAdminClient()
   const clearedAt = new Date().toISOString()
 
-  // The mark first: if it cannot be written, nothing is deleted (a deletion other
-  // devices never hear of would come back with their next sync).
-  const { error: markError } = await recordDeletion(supabase, userId, CLEAR_ALL_ID, clearedAt)
+  const { data: existing, error: listError } = await supabase.from('synced_history').select('id').eq('user_id', userId)
+  if (listError) {
+    return NextResponse.json({ error: `Could not delete history: ${listError.message}` }, { status: 500 })
+  }
+  const ids = ((existing ?? []) as { id: string }[]).map(row => row.id)
+
+  // The marks first: if they cannot be written, nothing is deleted (a deletion other
+  // devices never hear of would come back with their next sync). Every entry in the
+  // cloud gets its own mark, so it stays deleted whatever the clocks say; the clear
+  // mark covers entries the server has not seen yet.
+  const { error: markError } = await recordDeletions(supabase, userId, [...ids, CLEAR_ALL_ID], clearedAt)
   if (markError) {
     return NextResponse.json({ error: `Could not delete history: ${markError.message}` }, { status: 500 })
   }
 
-  const { data: existing, error: countError } = await supabase.from('synced_history').select('id').eq('user_id', userId)
-  if (countError) {
-    return NextResponse.json({ error: `Could not delete history: ${countError.message}` }, { status: 500 })
-  }
   const { error } = await supabase.from('synced_history').delete().eq('user_id', userId)
   if (error) {
     return NextResponse.json({ error: `Could not delete history: ${error.message}` }, { status: 500 })
   }
 
-  return NextResponse.json({ ok: true, deleted: (existing ?? []).length, clearedAt })
+  return NextResponse.json({ ok: true, deleted: ids.length, clearedAt })
 }

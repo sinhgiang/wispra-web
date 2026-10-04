@@ -74,6 +74,15 @@ export async function POST(req: NextRequest) {
   // Entries from the mobile app (id starting with MOBILE_ID_PREFIX, added through
   // /api/history/merge) are not the desktop's to replace and are kept.
   if (body.history) {
+    // Entries deleted on any device (or created before the last "delete everything")
+    // are not stored again, even though this desktop may not know of the deletion yet.
+    // Read before anything is touched: if it fails, nothing is deleted or written.
+    const deletionsResult = await getDeletions(supabase, userId)
+    if (!deletionsResult.ok) {
+      return NextResponse.json({ error: `History sync failed: ${deletionsResult.error}` }, { status: 500 })
+    }
+    const deletions = deletionsResult.deletions
+
     const { error: deleteError } = await supabase
       .from('synced_history')
       .delete()
@@ -82,9 +91,6 @@ export async function POST(req: NextRequest) {
     if (deleteError) {
       return NextResponse.json({ error: `History sync failed: ${deleteError.message}` }, { status: 500 })
     }
-    // Entries deleted on any device (or created before the last "delete everything")
-    // are not stored again, even though this desktop may not know of the deletion yet.
-    const deletions = await getDeletions(supabase, userId)
     const kept = body.history.filter((entry) => !isDeleted(entry, deletions))
     if (kept.length > 0) {
       const rows = kept.map((entry) => ({
