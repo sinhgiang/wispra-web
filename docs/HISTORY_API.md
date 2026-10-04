@@ -26,9 +26,19 @@ interface HistoryEntry {
 }
 ```
 
-Ids are chosen by the apps. Use ids that cannot collide with the desktop's, for
-example a `mobile-` prefix plus a UUID. An entry sent with an id that already
-exists **replaces** that entry.
+## The rule: phone entries have ids starting with `mobile-`
+
+Who owns an entry is decided by its id alone (the table has no "source" column):
+
+| Id | Owner | Written by | Replaced or removed by |
+|---|---|---|---|
+| starts with `mobile-` (exactly, lowercase), e.g. `mobile-6f1c2a9e-…` | the mobile app | `POST /api/history/merge` only | only the mobile app, by merging the same id again |
+| anything else | the desktop app | `POST /api/sync` | the next desktop sync |
+
+- The mobile app gives **every** entry an id `mobile-<uuid>`. The merge route
+  answers `400` for any other id, so the phone can never change a desktop entry.
+- The desktop app must never use ids starting with `mobile-`.
+- Merging an id that already exists **replaces** that phone entry.
 
 ## GET /api/history
 
@@ -70,23 +80,29 @@ a page may be skipped on the next page.
 
 ## POST /api/history/merge
 
-Adds or updates entries by id. **Never deletes anything**: entries not in the
-request, including all of the desktop's, stay as they are.
+Adds or updates the phone's entries by id. **Never deletes anything**: entries not
+in the request, including all of the desktop's, stay as they are. Every id must
+start with `mobile-`.
 
 Request body: `{ "entries": HistoryEntry[] }` with 1 to 500 entries. If the same id
 appears twice in one request, the last one is stored.
 
 Response `200`: `{ "ok": true, "merged": 2 }` (`merged` = distinct ids stored).
 
-Errors: `400` with `{ "error": "entries[3]: \"createdAt\" must be an ISO date string" }`
-for bad input (nothing is stored when any entry is invalid); `401` without a valid
-token; `500` if the database write failed.
+Errors: `400` for bad input, with the first problem, e.g.
+`{ "error": "entries[3]: \"id\" must start with \"mobile-\" (entries from the desktop cannot be changed here)" }`
+or `{ "error": "entries[3]: \"createdAt\" must be an ISO date string" }`. Nothing is
+stored when any entry is invalid. `401` without a valid token; `500` if the database
+write failed.
 
-## Important: the desktop app still replaces the whole list
+## How the desktop sync works with phone entries
 
-The desktop app syncs through `POST /api/sync`, which deletes the user's whole
-history in the cloud and stores the desktop's local list (its last 100 entries)
-in its place. That route is unchanged. Until it changes, **entries merged from the
-phone are removed the next time the desktop syncs** (covered by a test in
-`tests/history-routes.test.ts`). The mobile app should keep its own entries locally
-and not treat the cloud as the only copy yet.
+The desktop app syncs through `POST /api/sync`. For history it sends its whole
+local list (its last 100 entries) every time. The server deletes the user's entries
+**whose id does not start with `mobile-`** and stores the desktop's list in their
+place. Entries from the phone are left untouched, so they survive every desktop sync
+(tested in `tests/history-routes.test.ts`). An empty desktop list removes only the
+desktop's entries.
+
+The desktop app does not read the cloud history yet, so phone entries show up in
+the mobile app (and in connected AI assistants), not in the desktop app's History.

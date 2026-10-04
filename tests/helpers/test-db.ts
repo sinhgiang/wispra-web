@@ -85,7 +85,7 @@ export function fakeSupabase(pg: PGlite): SupabaseClient {
       let columns = '*'
       let rows: Record<string, unknown>[] = []
       let onConflict = ''
-      const filters: { col: string; op: '=' | '<'; value: unknown }[] = []
+      const filters: { col: string; op: '=' | '<' | 'NOT LIKE'; value: unknown }[] = []
       let orderBy = ''
       let limit: number | null = null
 
@@ -165,6 +165,11 @@ export function fakeSupabase(pg: PGlite): SupabaseClient {
         },
         lt(col: string, value: unknown) {
           filters.push({ col, op: '<', value })
+          return query
+        },
+        not(col: string, operator: string, value: unknown) {
+          if (operator !== 'like') throw new Error(`fakeSupabase: not(${operator}) is not supported`)
+          filters.push({ col, op: 'NOT LIKE', value })
           return query
         },
         order(col: string, options?: { ascending?: boolean }) {

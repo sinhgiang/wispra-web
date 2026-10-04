@@ -1,7 +1,8 @@
 // Dictation history shared between the desktop and mobile apps (public.synced_history).
-// The desktop app replaces the whole list through /api/sync; the mobile app reads it
-// through GET /api/history and adds or updates single entries through
-// POST /api/history/merge, which never deletes anything.
+// The desktop app replaces its own entries through /api/sync; the mobile app reads
+// everything through GET /api/history and adds or updates its own entries (ids
+// starting with MOBILE_ID_PREFIX) through POST /api/history/merge, which never
+// deletes anything.
 
 /** One history entry as the apps send and receive it (same shape as /api/sync). */
 export interface HistoryEntry {
@@ -19,6 +20,14 @@ export interface HistoryEntry {
 export interface StoredHistoryEntry extends HistoryEntry {
   syncedAt: string
 }
+
+/**
+ * Every entry the mobile app stores starts its id with this. /api/sync (the
+ * desktop's full replace) leaves these entries alone, and /api/history/merge
+ * accepts only these ids, so the phone can never overwrite a desktop entry and
+ * the desktop can never wipe a phone entry. No `_` or `%`: it is used in a LIKE.
+ */
+export const MOBILE_ID_PREFIX = 'mobile-'
 
 export const HISTORY_PAGE_DEFAULT = 100
 export const HISTORY_PAGE_MAX = 500
@@ -78,6 +87,7 @@ export function invalidEntry(value: unknown): string | null {
   if (!value || typeof value !== 'object') return 'each entry must be an object'
   const e = value as Record<string, unknown>
   if (typeof e.id !== 'string' || !e.id.trim() || e.id.length > ID_MAX) return `"id" must be a non-empty string of at most ${ID_MAX} characters`
+  if (!e.id.startsWith(MOBILE_ID_PREFIX) || e.id.length === MOBILE_ID_PREFIX.length) return `"id" must start with "${MOBILE_ID_PREFIX}" (entries from the desktop cannot be changed here)`
   if (typeof e.text !== 'string' || e.text.length > TEXT_MAX) return `"text" must be a string of at most ${TEXT_MAX} characters`
   if (typeof e.createdAt !== 'string' || Number.isNaN(Date.parse(e.createdAt))) return '"createdAt" must be an ISO date string'
   if (!optionalString(e.rawText, TEXT_MAX)) return '"rawText" must be a string or null'

@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createAdminClient, validateToken } from '@/lib/supabase-server'
+import { MOBILE_ID_PREFIX } from '@/lib/history'
 
 interface HistoryRow {
   id: string
@@ -65,10 +66,16 @@ export async function POST(req: NextRequest) {
   const supabase = createAdminClient()
   const synced = { history: 0, lexicon: 0, meetings: 0 }
 
-  // History: full replace — the desktop app always sends its complete local
-  // snapshot (capped at 100 entries there), never a partial diff.
+  // History: full replace of the desktop's entries — the desktop app always sends
+  // its complete local snapshot (capped at 100 entries there), never a partial diff.
+  // Entries from the mobile app (id starting with MOBILE_ID_PREFIX, added through
+  // /api/history/merge) are not the desktop's to replace and are kept.
   if (body.history) {
-    const { error: deleteError } = await supabase.from('synced_history').delete().eq('user_id', userId)
+    const { error: deleteError } = await supabase
+      .from('synced_history')
+      .delete()
+      .eq('user_id', userId)
+      .not('id', 'like', `${MOBILE_ID_PREFIX}%`)
     if (deleteError) {
       return NextResponse.json({ error: `History sync failed: ${deleteError.message}` }, { status: 500 })
     }

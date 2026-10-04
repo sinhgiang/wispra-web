@@ -55,6 +55,8 @@ const entry = (id: string, minute: number, text = `Entry ${id}`) => ({
 })
 
 const ids = async (token: string) => ((await (await read(token)).json()).entries as { id: string }[]).map(e => e.id)
+const texts = async (token: string) =>
+  Object.fromEntries(((await (await read(token)).json()).entries as { id: string; text: string }[]).map(e => [e.id, e.text]))
 
 describe('GET /api/history and POST /api/history/merge', () => {
   let pg: PGlite
@@ -83,45 +85,54 @@ describe('GET /api/history and POST /api/history/merge', () => {
     expect(body.entries[0]).toEqual({ ...entry('desk-3', 3), syncedAt: expect.any(String) })
   })
 
-  it('merging from the phone adds and updates entries and keeps every desktop entry', async () => {
-    const res = await merge('alice-token', {
-      entries: [entry('phone-1', 10, 'Said on the phone'), entry('phone-2', 11), { ...entry('desk-2', 2), text: 'Edited on the phone' }],
-    })
-
+  it('merging from the phone adds and updates phone entries and keeps every desktop entry', async () => {
+    const res = await merge('alice-token', { entries: [entry('mobile-1', 10, 'Said on the phone'), entry('mobile-2', 11)] })
     expect(res.status).toBe(200)
-    expect(await res.json()).toEqual({ ok: true, merged: 3 })
-    expect(await ids('alice-token')).toEqual(['phone-2', 'phone-1', 'desk-3', 'desk-2', 'desk-1'])
-    const all = (await (await read('alice-token')).json()).entries as { id: string; text: string }[]
-    expect(all.find(e => e.id === 'desk-2')?.text).toBe('Edited on the phone')
-    expect(all.find(e => e.id === 'desk-1')?.text).toBe('Entry desk-1')
+    expect(await res.json()).toEqual({ ok: true, merged: 2 })
+
+    await merge('alice-token', { entries: [entry('mobile-1', 10, 'Edited on the phone')] })
+
+    expect(await ids('alice-token')).toEqual(['mobile-2', 'mobile-1', 'desk-3', 'desk-2', 'desk-1'])
+    expect(await texts('alice-token')).toMatchObject({ 'mobile-1': 'Edited on the phone', 'desk-1': 'Entry desk-1' })
+  })
+
+  it('refuses ids without the "mobile-" prefix, so a desktop entry cannot be changed from the phone', async () => {
+    for (const id of ['desk-2', 'phone-1', 'Mobile-1', 'mobile-', 'xmobile-1']) {
+      const res = await merge('alice-token', { entries: [entry('mobile-ok', 10), entry(id, 2, 'Changed from the phone')] })
+      expect(res.status, id).toBe(400)
+      expect((await res.json()).error).toContain('entries[1]: "id" must start with "mobile-"')
+    }
+    // Nothing from those requests was stored.
+    expect(await ids('alice-token')).toEqual(['desk-3', 'desk-2', 'desk-1'])
+    expect((await texts('alice-token'))['desk-2']).toBe('Entry desk-2')
   })
 
   it('merging the same entries again changes nothing', async () => {
-    const batch = { entries: [entry('phone-1', 10), entry('phone-2', 11)] }
+    const batch = { entries: [entry('mobile-1', 10), entry('mobile-2', 11)] }
     await merge('alice-token', batch)
     await merge('alice-token', batch)
 
-    expect(await ids('alice-token')).toEqual(['phone-2', 'phone-1', 'desk-3', 'desk-2', 'desk-1'])
+    expect(await ids('alice-token')).toEqual(['mobile-2', 'mobile-1', 'desk-3', 'desk-2', 'desk-1'])
   })
 
   it('another user can neither read nor change someone else’s history', async () => {
+    await merge('alice-token', { entries: [entry('mobile-a1', 10, 'Alice on her phone')] })
     expect((await (await read('bob-token')).json()).entries).toEqual([])
 
-    // Bob sends an entry with Alice's id and her user id in the body: it becomes Bob's own entry.
-    const res = await merge('bob-token', { entries: [{ ...entry('desk-1', 1, 'Bob wrote this'), userId: ALICE, user_id: ALICE }] })
+    // Bob sends Alice's phone entry id with her user id in the body: it becomes Bob's own entry.
+    const res = await merge('bob-token', { entries: [{ ...entry('mobile-a1', 10, 'Bob wrote this'), userId: ALICE, user_id: ALICE }] })
     expect(res.status).toBe(200)
 
-    const alice = (await (await read('alice-token')).json()).entries as { id: string; text: string }[]
-    expect(alice.find(e => e.id === 'desk-1')?.text).toBe('Entry desk-1')
-    expect(alice).toHaveLength(3)
-    expect(await ids('bob-token')).toEqual(['desk-1'])
+    expect(await texts('alice-token')).toMatchObject({ 'mobile-a1': 'Alice on her phone' })
+    expect(await ids('alice-token')).toHaveLength(4)
+    expect(await texts('bob-token')).toEqual({ 'mobile-a1': 'Bob wrote this' })
   })
 
   it('both routes refuse a missing or invalid sign-in', async () => {
     expect((await read()).status).toBe(401)
     expect((await read('stolen-token')).status).toBe(401)
-    expect((await merge(undefined, { entries: [entry('x', 1)] })).status).toBe(401)
-    expect((await merge('stolen-token', { entries: [entry('x', 1)] })).status).toBe(401)
+    expect((await merge(undefined, { entries: [entry('mobile-x', 1)] })).status).toBe(401)
+    expect((await merge('stolen-token', { entries: [entry('mobile-x', 1)] })).status).toBe(401)
     expect(await ids('alice-token')).toEqual(['desk-3', 'desk-2', 'desk-1'])
   })
 
@@ -142,35 +153,36 @@ describe('GET /api/history and POST /api/history/merge', () => {
 
     expect((await merge('alice-token', 'not json')).status).toBe(400)
     expect((await merge('alice-token', { entries: [] })).status).toBe(400)
-    expect((await merge('alice-token', { entries: Array.from({ length: 501 }, (_, i) => entry(`p${i}`, 1)) })).status).toBe(400)
-    const bad = await merge('alice-token', { entries: [entry('ok', 1), { ...entry('bad', 2), createdAt: 'soon' }] })
+    expect((await merge('alice-token', { entries: Array.from({ length: 501 }, (_, i) => entry(`mobile-${i}`, 1)) })).status).toBe(400)
+    const bad = await merge('alice-token', { entries: [entry('mobile-ok', 1), { ...entry('mobile-bad', 2), createdAt: 'soon' }] })
     expect(bad.status).toBe(400)
     expect((await bad.json()).error).toContain('entries[1]')
     expect((await merge('alice-token', { entries: [{ ...entry('', 1) }] })).status).toBe(400)
-    expect((await merge('alice-token', { entries: [{ ...entry('neg', 1), durationSeconds: -1 }] })).status).toBe(400)
+    expect((await merge('alice-token', { entries: [{ ...entry('mobile-neg', 1), durationSeconds: -1 }] })).status).toBe(400)
 
     expect(await ids('alice-token')).toEqual(['desk-3', 'desk-2', 'desk-1'])
   })
 
   it('the same id twice in one request is stored once (the last one wins)', async () => {
-    const res = await merge('alice-token', { entries: [entry('phone-1', 10, 'first'), entry('phone-1', 10, 'second')] })
+    const res = await merge('alice-token', { entries: [entry('mobile-1', 10, 'first'), entry('mobile-1', 10, 'second')] })
     expect(await res.json()).toEqual({ ok: true, merged: 1 })
-    const all = (await (await read('alice-token')).json()).entries as { id: string; text: string }[]
-    expect(all.filter(e => e.id === 'phone-1').map(e => e.text)).toEqual(['second'])
+    expect((await texts('alice-token'))['mobile-1']).toBe('second')
   })
 })
 
-describe('/api/sync is unchanged', () => {
+describe('/api/sync with phone entries', () => {
   let pg: PGlite
 
   beforeAll(async () => {
     pg = await createProductionLikeDb()
-    await queryAs(pg, 'supabase_auth_admin', 'INSERT INTO auth.users (id) VALUES ($1)', [ALICE])
+    await queryAs(pg, 'supabase_auth_admin', 'INSERT INTO auth.users (id) VALUES ($1), ($2)', [ALICE, BOB])
     state.supabase = fakeSupabase(pg)
   })
   afterAll(() => pg.close())
 
-  it('still replaces the whole history with what the desktop sends', async () => {
+  beforeEach(() => pg.exec('DELETE FROM public.synced_history'))
+
+  it('still replaces the desktop’s entries with what the desktop sends', async () => {
     await sync('alice-token', { history: [entry('desk-1', 1), entry('desk-2', 2)] })
     const res = await sync('alice-token', { history: [entry('desk-9', 9)] })
 
@@ -178,14 +190,34 @@ describe('/api/sync is unchanged', () => {
     expect(await ids('alice-token')).toEqual(['desk-9'])
   })
 
-  it('KNOWN CONFLICT: the next desktop sync removes entries merged from the phone', async () => {
+  it('a desktop sync keeps every entry merged from the phone (was the known conflict)', async () => {
     await sync('alice-token', { history: [entry('desk-1', 1)] })
-    await merge('alice-token', { entries: [entry('phone-1', 10)] })
-    expect(await ids('alice-token')).toEqual(['phone-1', 'desk-1'])
+    await merge('alice-token', { entries: [entry('mobile-1', 10), entry('mobile-2', 11)] })
+    expect(await ids('alice-token')).toEqual(['mobile-2', 'mobile-1', 'desk-1'])
 
-    // The desktop sends its local snapshot, which does not contain the phone's entry.
-    await sync('alice-token', { history: [entry('desk-1', 1), entry('desk-2', 2)] })
+    // The desktop sends its local snapshot, which does not contain the phone's entries.
+    await sync('alice-token', { history: [entry('desk-1', 1, 'Edited on the desktop'), entry('desk-2', 2)] })
 
-    expect(await ids('alice-token')).toEqual(['desk-2', 'desk-1'])
+    expect(await ids('alice-token')).toEqual(['mobile-2', 'mobile-1', 'desk-2', 'desk-1'])
+    expect(await texts('alice-token')).toMatchObject({ 'desk-1': 'Edited on the desktop', 'mobile-1': 'Entry mobile-1' })
+  })
+
+  it('an empty desktop history removes only the desktop’s entries', async () => {
+    await sync('alice-token', { history: [entry('desk-1', 1)] })
+    await merge('alice-token', { entries: [entry('mobile-1', 10)] })
+
+    await sync('alice-token', { history: [] })
+
+    expect(await ids('alice-token')).toEqual(['mobile-1'])
+  })
+
+  it('a desktop sync touches only its own user', async () => {
+    await merge('bob-token', { entries: [entry('mobile-b1', 10)] })
+    await sync('bob-token', { history: [entry('desk-b1', 1)] })
+
+    await sync('alice-token', { history: [entry('desk-1', 1)] })
+
+    expect(await ids('bob-token')).toEqual(['mobile-b1', 'desk-b1'])
+    expect(await ids('alice-token')).toEqual(['desk-1'])
   })
 })
