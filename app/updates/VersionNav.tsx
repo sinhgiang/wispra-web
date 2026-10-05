@@ -4,17 +4,38 @@ import { useEffect, useRef } from 'react'
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import { formatReleaseDate } from './releases'
-import { hrefFor } from './links'
+import { hrefFor, trackOf, TRACK_BASE, TRACK_LABEL, versionLabel, type Track } from './links'
 
 export interface NavItem {
   version: string
   date: string
 }
 
-/** Which version the current URL shows: /updates is the latest one. */
-function activeVersion(pathname: string, latest: string): string {
-  const match = pathname.match(/^\/updates\/([^/]+)/)
-  return match ? decodeURIComponent(match[1]) : latest
+/** Which version the current URL shows: a list's base URL is its latest entry. */
+function activeVersion(pathname: string, latest: string, track: Track): string {
+  const rest = pathname.slice(TRACK_BASE[track].length).replace(/^\//, '').split('/')[0]
+  return rest ? decodeURIComponent(rest) : latest
+}
+
+/** Mac & Windows | iPhone. */
+function TrackTabs({ track }: { track: Track }) {
+  return (
+    <div role="tablist" aria-label="Product" className="mb-4 inline-flex rounded-xl border border-white/10 bg-bg-card p-1 text-sm">
+      {(['desktop', 'iphone'] as const).map(t => (
+        <Link
+          key={t}
+          href={TRACK_BASE[t]}
+          role="tab"
+          aria-selected={t === track}
+          className={`rounded-lg px-3 py-1.5 font-medium transition-colors ${
+            t === track ? 'bg-brand text-white' : 'text-text-muted hover:text-text-primary'
+          }`}
+        >
+          {TRACK_LABEL[t]}
+        </Link>
+      ))}
+    </div>
+  )
 }
 
 /**
@@ -22,9 +43,12 @@ function activeVersion(pathname: string, latest: string): string {
  * scrolls sideways on phones and tablets. Lives in the layout, so it keeps its
  * scroll position while you click through versions.
  */
-export default function VersionNav({ items }: { items: NavItem[] }) {
+export default function VersionNav({ lists }: { lists: Record<Track, NavItem[]> }) {
+  const pathname = usePathname()
+  const track = trackOf(pathname)
+  const items = lists[track]
   const latest = items[0]?.version ?? ''
-  const active = activeVersion(usePathname(), latest)
+  const active = activeVersion(pathname, latest, track)
   const chipsRef = useRef<HTMLDivElement>(null)
 
   // Keep the selected chip in view on small screens.
@@ -35,6 +59,7 @@ export default function VersionNav({ items }: { items: NavItem[] }) {
 
   return (
     <nav aria-label="Versions" className="mb-6 lg:mb-0">
+      <TrackTabs track={track} />
       {/* Phones and tablets: sideways chips */}
       <div
         ref={chipsRef}
@@ -46,7 +71,7 @@ export default function VersionNav({ items }: { items: NavItem[] }) {
           return (
             <Link
               key={r.version}
-              href={hrefFor(r.version, latest)}
+              href={hrefFor(r.version, latest, track)}
               aria-current={isActive ? 'page' : undefined}
               className={`shrink-0 rounded-full border px-3.5 py-1.5 text-sm font-medium transition-colors ${
                 isActive
@@ -54,7 +79,7 @@ export default function VersionNav({ items }: { items: NavItem[] }) {
                   : 'border-white/10 bg-bg-card text-text-muted hover:text-text-primary'
               }`}
             >
-              v{r.version}
+              {versionLabel(r.version, track)}
               {isLatest && <span className={`ml-1.5 text-[11px] ${isActive ? 'text-white/80' : 'text-[#27C93F]'}`}>Latest</span>}
             </Link>
           )
@@ -69,7 +94,7 @@ export default function VersionNav({ items }: { items: NavItem[] }) {
             return (
               <li key={r.version}>
                 <Link
-                  href={hrefFor(r.version, latest)}
+                  href={hrefFor(r.version, latest, track)}
                   aria-current={isActive ? 'page' : undefined}
                   className={`group -ml-px flex items-center justify-between gap-3 border-l-2 py-2 pl-4 pr-2 rounded-r-lg transition-colors ${
                     isActive
@@ -79,7 +104,7 @@ export default function VersionNav({ items }: { items: NavItem[] }) {
                 >
                   <span className="min-w-0">
                     <span className={`block text-sm font-semibold ${isActive ? 'text-text-primary' : 'text-text-primary/80 group-hover:text-text-primary'}`}>
-                      v{r.version}
+                      {versionLabel(r.version, track)}
                     </span>
                     <span className="block text-xs text-text-muted">{formatReleaseDate(r.date)}</span>
                   </span>
