@@ -21,6 +21,41 @@ export interface IphoneRelease extends UpdateEntry {
 
 export const IPHONE_RELEASES: IphoneRelease[] = [
   {
+    version: '8',
+    date: '2026-10-06',
+    title: 'Wispra for iPhone, build 8',
+    summary: 'Open a dictation in History, copy it, and correct it so Wispra learns.',
+    new: [
+      '**A dictation opens in full.** Tap a dictation in History to read all of its words.',
+      '**Copy.** One tap copies the text to paste into any app.',
+      '**Edit.** Fix the words Wispra got wrong. Wispra learns your spelling from what you change, as on the computer: fix a word once and it is remembered, fix it again and it is replaced by itself in every next dictation, by voice, in meetings and through the keyboard. Changes of punctuation or capitals only, and texts rewritten broadly, teach nothing.',
+    ],
+    notes: ['Your edit stays on the phone (the computer keeps its own edits too). The first text is kept.'],
+    imageAlt: 'Wispra for iPhone, build 8',
+    image: null,
+    source: 'repo',
+    screens: [
+      { src: null, caption: 'A dictation open in History, with Edit and Copy' },
+      { src: null, caption: 'The "Learned: …" notice after saving an edit' },
+    ],
+  },
+  {
+    version: '7',
+    date: '2026-10-06',
+    title: 'Wispra for iPhone, build 7',
+    summary: 'The keyboard now tells you when it cannot hear you.',
+    new: [
+      '**Keyboard log** (Account). What Wispra and its keyboard noted about the listening session, newest first, with the likeliest cause on top and a Share button, so a problem in one app can be traced.',
+    ],
+    fixed: [
+      'In some apps (Messenger, Zalo) the keyboard could stay on "Writing…" for ever. If iOS stops Wispra while you speak, the keyboard now says so within seconds ("Wispra was stopped by iPhone, your words did not arrive. Open Wispra and speak again") and keeps the message until your next tap. A microphone shown as listening, while Wispra is gone, turns back to ready.',
+    ],
+    imageAlt: 'Wispra for iPhone, build 7',
+    image: null,
+    source: 'repo',
+    screens: [{ src: null, caption: 'Account › Keyboard log, with a log entry' }],
+  },
+  {
     version: '6',
     date: '2026-10-06',
     title: 'Wispra for iPhone, build 6',

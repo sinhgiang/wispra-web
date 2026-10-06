@@ -9,6 +9,7 @@ const SECTIONS = [
   { key: 'new', label: 'New', dot: 'bg-brand', text: 'text-[#8EA2FF]' },
   { key: 'improved', label: 'Improved', dot: 'bg-[#A78BFA]', text: 'text-[#C4B5FD]' },
   { key: 'fixed', label: 'Fixed', dot: 'bg-[#27C93F]', text: 'text-[#3DDC5A]' },
+  { key: 'notes', label: 'Good to know', dot: 'bg-white/40', text: 'text-text-muted' },
 ] as const
 
 /** Release notes from GitHub may use **bold** and `code`; everything else is plain text. */
@@ -24,11 +25,18 @@ function Inline({ text }: { text: string }) {
   )
 }
 
+/** Grid width by number of screens, written out so Tailwind keeps the classes. */
+const SCREEN_GRID: Record<number, string> = {
+  1: 'grid-cols-1 max-w-[240px] mx-auto',
+  2: 'grid-cols-2 max-w-[500px] mx-auto',
+  3: 'grid-cols-3',
+}
+
 /** Phone screenshots side by side; a screen without an image shows where it will go. */
 function PhoneScreens({ screens, label }: { screens: PhoneScreen[]; label: string }) {
   return (
     <figure className="mt-6 sm:mt-8">
-      <div className="grid grid-cols-3 gap-2 sm:gap-5">
+      <div className={`grid gap-2 sm:gap-5 ${SCREEN_GRID[Math.min(screens.length, 3)] ?? SCREEN_GRID[3]}`}>
         {screens.map(screen => (
           <div key={screen.caption} className="mx-auto w-full max-w-[240px] min-w-0">
             <div className="rounded-[1.25rem] sm:rounded-[2rem] border border-white/10 bg-bg-card p-1 sm:p-2 shadow-2xl shadow-brand/5">

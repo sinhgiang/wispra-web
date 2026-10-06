@@ -108,7 +108,8 @@ To add a build:
 1. Add an object at the **top** of `IPHONE_RELEASES` in `app/updates/iphone.ts`:
    `version` is the build number as a string (`'7'`), `date` is `YYYY-MM-DD`,
    `title` is `Wispra for iPhone, build 7`, an optional `summary`, and `new` /
-   `improved` / `fixed` bullets in plain English (`**bold**` leads are fine). Keep
+   `improved` / `fixed` bullets in plain English (`**bold**` leads are fine), and
+   `notes` for a "Good to know" list (limits or behaviour, not changes). Keep
    `image: null` and `source: 'repo'`.
 2. List up to three `screens`, each with a `caption` saying what it shows. Until a
    screenshot exists, use `src: null`: the page shows a "Screenshot coming soon"
