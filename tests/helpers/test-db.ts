@@ -89,13 +89,15 @@ export function fakeSupabase(pg: PGlite, { maxRows = 1000 }: { maxRows?: number 
       let columns = '*'
       let rows: Record<string, unknown>[] = []
       let onConflict = ''
-      const filters: { col: string; op: '=' | '<' | 'NOT LIKE'; value: unknown }[] = []
+      const filters: { col: string; op: '=' | '<' | 'NOT LIKE' | 'IN'; value: unknown }[] = []
       let orderBy = ''
       let limit: number | null = null
       let offset = 0
 
       const where = (offset = 0) => {
-        const parts = filters.map((f, i) => `${ident(f.col)} ${f.op} $${i + 1 + offset}`)
+        const parts = filters.map((f, i) =>
+          f.op === 'IN' ? `${ident(f.col)} = ANY($${i + 1 + offset})` : `${ident(f.col)} ${f.op} $${i + 1 + offset}`
+        )
         return parts.length ? ` WHERE ${parts.join(' AND ')}` : ''
       }
       const params = () => filters.map(f => f.value)
@@ -170,6 +172,10 @@ export function fakeSupabase(pg: PGlite, { maxRows = 1000 }: { maxRows?: number 
         },
         lt(col: string, value: unknown) {
           filters.push({ col, op: '<', value })
+          return query
+        },
+        in(col: string, values: unknown[]) {
+          filters.push({ col, op: 'IN', value: values })
           return query
         },
         not(col: string, operator: string, value: unknown) {
