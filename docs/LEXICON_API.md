@@ -69,3 +69,11 @@ The desktop still sends its whole lexicon through `/api/sync`, which replaces
 the stored list. Learned words a phone writes through `PUT /api/lexicon` can be
 overwritten by the next desktop sync until the desktop reads and merges through
 `GET /api/lexicon` first.
+
+## Checking a deployment with real sign-ins
+
+`node scripts/probe-lexicon.mjs <deployment URL>` signs in one or two **test**
+accounts (it asks for them and the Supabase publishable key, and prints none of
+them), then checks 401s, PUT and GET on the real tables, that account 2 cannot
+see or change account 1's lists, and puts every list back as it was. Protected
+previews go through `vercel curl`.
