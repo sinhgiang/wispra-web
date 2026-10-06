@@ -16,9 +16,27 @@ const build = (n: string) => {
 const renderBuild = async (n: string) => renderToStaticMarkup(await IphoneBuildPage({ params: Promise.resolve({ build: n }) }))
 
 describe('Wispra for iPhone on the Updates page', () => {
-  it('lists builds 8, 7 and 6, newest first, with build 8 as the latest', () => {
-    expect(IPHONE_RELEASES.map(r => r.version)).toEqual(['8', '7', '6'])
-    expect(LATEST_IPHONE.version).toBe('8')
+  it('lists builds 10, 8, 7 and 6, newest first, with build 10 as the latest', () => {
+    expect(IPHONE_RELEASES.map(r => r.version)).toEqual(['10', '8', '7', '6'])
+    expect(LATEST_IPHONE.version).toBe('10')
+  })
+
+  it('build 10 has the notes as written', () => {
+    expect(build('10')).toMatchObject({ title: 'Wispra for iPhone, build 10', summary: 'Your words, spelled your way.' })
+    const [vocabulary, learned] = build('10').new ?? []
+    expect(build('10').new).toHaveLength(2)
+    expect(vocabulary.startsWith('**Custom vocabulary** (Account). List the names and terms you want spelled exactly — Github, Capcut, TikTok, your own name.')).toBe(true)
+    expect(vocabulary).toContain('("git hub", "Tik Tok", "Lenvit")')
+    expect(vocabulary.endsWith('Paste a whole list at once.')).toBe(true)
+    expect(learned.startsWith('**Learned** (Account). The same Learned section as on the computer:')).toBe(true)
+    expect(learned.endsWith('A switch turns learning off and keeps your lists.')).toBe(true)
+
+    const [signIn] = build('10').fixed ?? []
+    expect(build('10').fixed).toHaveLength(1)
+    expect(signIn.startsWith(`Tapping the keyboard's mic no longer shows "Sign in first" to an account that is signed in.`)).toBe(true)
+    expect(signIn).toContain('says "Checking your account…"')
+    expect(signIn.endsWith('Your sign-in is kept readable after the first unlock.')).toBe(true)
+    expect(build('10').improved).toBeUndefined()
   })
 
   it('build 8 has the notes as written, including "Good to know"', () => {
@@ -64,7 +82,7 @@ describe('Wispra for iPhone on the Updates page', () => {
   })
 
   it('every build leaves room for its screenshots until real ones (sample content only) are added', () => {
-    expect(IPHONE_RELEASES.map(r => r.screens.length)).toEqual([2, 1, 3])
+    expect(IPHONE_RELEASES.map(r => r.screens.length)).toEqual([4, 2, 1, 3])
     for (const release of IPHONE_RELEASES) for (const screen of release.screens) expect(screen.src).toBeNull()
   })
 
@@ -73,11 +91,24 @@ describe('Wispra for iPhone on the Updates page', () => {
     expect(desktop.some(r => /iphone/i.test(r.name))).toBe(false)
   })
 
-  it('/updates/iphone shows build 8 as Latest, its notes, "Good to know" and its screenshot places', () => {
+  it('/updates/iphone shows build 10 as Latest, its notes and its four screenshot places', () => {
     const html = renderToStaticMarkup(IphoneUpdatesPage())
 
-    expect(html).toContain('Build 8')
+    expect(html).toContain('Build 10')
     expect(html).toContain('Latest')
+    expect(html).toContain('Wispra for iPhone, build 10')
+    expect(html).toContain('<strong class="font-semibold text-text-primary">Custom vocabulary</strong>')
+    expect(html.split('Screenshot coming soon').length - 1).toBe(4)
+    expect(html).toContain('grid-cols-2 sm:grid-cols-4')
+    expect(html).toContain('href="/updates/iphone/8"')
+    expect(html).not.toContain('v10')
+  })
+
+  it('/updates/iphone/8 shows build 8, its notes, "Good to know" and its screenshot places', async () => {
+    const html = await renderBuild('8')
+
+    expect(html).toContain('Build 8')
+    expect(html).not.toContain('Latest')
     expect(html).toContain('Wispra for iPhone, build 8')
     expect(html).toContain('<strong class="font-semibold text-text-primary">A dictation opens in full.</strong>')
     expect(html).toContain('New')
@@ -85,6 +116,7 @@ describe('Wispra for iPhone on the Updates page', () => {
     expect(html.split('Screenshot coming soon').length - 1).toBe(2)
     expect(html).toContain('A dictation open in History, with Edit and Copy')
     expect(html).toContain('href="/updates/iphone/7"')
+    expect(html).toContain('href="/updates/iphone"')
     expect(html).not.toContain('v8')
   })
 
@@ -93,7 +125,7 @@ describe('Wispra for iPhone on the Updates page', () => {
     expect(seven).toContain('Wispra for iPhone, build 7')
     expect(seven).toContain('Keyboard log')
     expect(seven.split('Screenshot coming soon').length - 1).toBe(1)
-    expect(seven).toContain('href="/updates/iphone"')
+    expect(seven).toContain('href="/updates/iphone/8"')
     expect(seven).toContain('href="/updates/iphone/6"')
     expect(seven).not.toContain('Latest')
 
@@ -110,8 +142,8 @@ describe('Wispra for iPhone on the Updates page', () => {
     expect(trackOf('/updates/iphone/5')).toBe('iphone')
     expect(trackOf('/updates/iphones')).toBe('desktop')
 
-    expect(hrefFor('8', '8', 'iphone')).toBe('/updates/iphone')
-    expect(hrefFor('6', '8', 'iphone')).toBe('/updates/iphone/6')
+    expect(hrefFor('10', '10', 'iphone')).toBe('/updates/iphone')
+    expect(hrefFor('6', '10', 'iphone')).toBe('/updates/iphone/6')
     expect(hrefFor('0.6.7', '0.6.7')).toBe('/updates')
     expect(hrefFor('0.6.4', '0.6.7')).toBe('/updates/0.6.4')
 
@@ -119,11 +151,11 @@ describe('Wispra for iPhone on the Updates page', () => {
     expect(versionLabel('0.6.7')).toBe('v0.6.7')
   })
 
-  it('/updates/iphone/8 goes to /updates/iphone; an unknown build is not found', async () => {
-    expect(generateStaticParams()).toEqual([{ build: '8' }, { build: '7' }, { build: '6' }])
+  it('/updates/iphone/10 goes to /updates/iphone; an unknown build is not found', async () => {
+    expect(generateStaticParams()).toEqual([{ build: '10' }, { build: '8' }, { build: '7' }, { build: '6' }])
     expect(findIphoneRelease('9')).toBeUndefined()
 
-    await expect(IphoneBuildPage({ params: Promise.resolve({ build: '8' }) })).rejects.toMatchObject({
+    await expect(IphoneBuildPage({ params: Promise.resolve({ build: '10' }) })).rejects.toMatchObject({
       digest: expect.stringContaining('/updates/iphone'),
     })
     await expect(IphoneBuildPage({ params: Promise.resolve({ build: '9' }) })).rejects.toMatchObject({

@@ -21,6 +21,28 @@ export interface IphoneRelease extends UpdateEntry {
 
 export const IPHONE_RELEASES: IphoneRelease[] = [
   {
+    version: '10',
+    date: '2026-10-06',
+    title: 'Wispra for iPhone, build 10',
+    summary: 'Your words, spelled your way.',
+    new: [
+      '**Custom vocabulary** (Account). List the names and terms you want spelled exactly — Github, Capcut, TikTok, your own name. Wispra listens for them and, when speech recognition writes one differently ("git hub", "Tik Tok", "Lenvit"), puts your spelling back. It works everywhere you dictate: the keyboard\'s mic, the mic button and meetings. Paste a whole list at once.',
+      '**Learned** (Account). The same Learned section as on the computer: words learned from the fixes you make in History, names Wispra picked up from your History (keep or remove them), suggestions, your writing style and habits, and a measure of whether learning is helping. A switch turns learning off and keeps your lists.',
+    ],
+    fixed: [
+      'Tapping the keyboard\'s mic no longer shows "Sign in first" to an account that is signed in. Wispra now waits for your saved sign-in to be read, says "Checking your account…", and if the phone will not hand it over (for instance right after a restart, while locked) tells you so and lets you try again. Your sign-in is kept readable after the first unlock.',
+    ],
+    imageAlt: 'Wispra for iPhone, build 10',
+    image: null,
+    source: 'repo',
+    screens: [
+      { src: null, caption: 'Account with Custom vocabulary and Learned' },
+      { src: null, caption: 'Custom vocabulary with a list of terms' },
+      { src: null, caption: 'Learned' },
+      { src: null, caption: 'Text typed by the keyboard, with the terms spelled right' },
+    ],
+  },
+  {
     version: '8',
     date: '2026-10-06',
     title: 'Wispra for iPhone, build 8',
