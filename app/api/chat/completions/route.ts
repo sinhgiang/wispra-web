@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createAdminClient, validateToken } from '@/lib/supabase-server'
 import { AI_QUOTA_EXCEEDED_CODE, cappedMaxTokens, getAiQuotaStatus, recordAiTokens } from '@/lib/ai-quota'
+import { cleanGroqError } from '@/lib/groq-errors'
 
 const GROQ_CHAT_URL = 'https://api.groq.com/openai/v1/chat/completions'
 
@@ -284,7 +285,7 @@ export async function POST(req: NextRequest) {
   const headers = rateLimitHeaders(used.response.headers)
 
   if (!used.response.ok) {
-    return NextResponse.json({ error: used.text }, { status: used.response.status, headers })
+    return NextResponse.json({ error: cleanGroqError(used.text) }, { status: used.response.status, headers })
   }
 
   if (used.result === null) {

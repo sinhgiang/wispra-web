@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { serverError } from '@/lib/api-errors'
 import { createAdminClient, validateToken } from '@/lib/supabase-server'
 import { checkedLexicon, cleanVocabulary, fromLexiconRow, replaceLexicon, type LexiconEntry } from '@/lib/lexicon'
 import { isMissingTable } from '@/lib/history-deletions'
@@ -33,10 +34,10 @@ export async function GET(req: NextRequest) {
 
   // Before migration 009 the vocabulary table does not exist: an empty list.
   if (vocab.error && !isMissingTable(vocab.error)) {
-    return NextResponse.json({ error: `Could not read the vocabulary: ${vocab.error.message}` }, { status: 500 })
+    return serverError('Could not read the vocabulary', vocab.error.message)
   }
   if (lexicon.error) {
-    return NextResponse.json({ error: `Could not read learned words: ${lexicon.error.message}` }, { status: 500 })
+    return serverError('Could not read learned words', lexicon.error.message)
   }
 
   const row = vocab.error ? null : (vocab.data as { terms: string[]; updated_at: string } | null)
@@ -91,7 +92,7 @@ export async function PUT(req: NextRequest) {
       .upsert({ user_id: userId, terms, updated_at: now }, { onConflict: 'user_id' })
     if (error) {
       const status = isMissingTable(error) ? 503 : 500
-      return NextResponse.json({ error: `Could not save the vocabulary: ${error.message}` }, { status })
+      return serverError('Could not save the vocabulary', error.message, status)
     }
   }
 
@@ -99,7 +100,7 @@ export async function PUT(req: NextRequest) {
     // Written first, then what the list no longer has is removed: a failure part
     // way leaves the old words in place rather than an empty list.
     const error = await replaceLexicon(supabase, userId, entries, now)
-    if (error) return NextResponse.json({ error: `Could not save learned words: ${error.message}` }, { status: 500 })
+    if (error) return serverError('Could not save learned words', error.message)
   }
 
   return NextResponse.json({

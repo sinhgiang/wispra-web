@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createAdminClient, validateToken, currentMonth } from '@/lib/supabase-server'
 import { getAccount } from '@/lib/account'
 import { allowedTranscribeModel, billedSeconds, groqDurationSeconds, wavDurationSeconds } from '@/lib/transcription'
+import { cleanGroqError } from '@/lib/groq-errors'
 
 const FREE_LIMIT_SECONDS = 30 * 60 // 30 minutes
 
@@ -82,7 +83,7 @@ export async function POST(req: NextRequest) {
 
   if (!groqResponse.ok) {
     const text = await groqResponse.text()
-    return NextResponse.json({ error: text }, { status: groqResponse.status })
+    return NextResponse.json({ error: cleanGroqError(text) }, { status: groqResponse.status })
   }
 
   const result = await groqResponse.json() as { text?: string; x_groq?: unknown }

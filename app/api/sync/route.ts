@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { serverError } from '@/lib/api-errors'
 import { createAdminClient, validateToken } from '@/lib/supabase-server'
 import { HISTORY_SYNC_MAX, invalidEntry, MOBILE_ID_PREFIX, toRow, type HistoryEntry } from '@/lib/history'
 import { getDeletions, isDeleted } from '@/lib/history-deletions'
@@ -86,7 +87,7 @@ export async function POST(req: NextRequest) {
     // Read before anything is touched: if it fails, nothing is deleted or written.
     const deletionsResult = await getDeletions(supabase, userId)
     if (!deletionsResult.ok) {
-      return NextResponse.json({ error: `History sync failed: ${deletionsResult.error}` }, { status: 500 })
+      return serverError('History sync failed', deletionsResult.error)
     }
     const deletions = deletionsResult.deletions
     const kept = history.filter(entry => !isDeleted(entry, deletions))
@@ -97,13 +98,13 @@ export async function POST(req: NextRequest) {
     // removed: a failure part way keeps the old entries instead of none.
     for (const part of chunks(desktopRows)) {
       const { error } = await supabase.from('synced_history').upsert(part, { onConflict: 'user_id,id' })
-      if (error) return NextResponse.json({ error: `History sync failed: ${error.message}` }, { status: 500 })
+      if (error) return serverError('History sync failed', error.message)
     }
     for (const part of chunks(phoneRows)) {
       const { error } = await supabase
         .from('synced_history')
         .upsert(part, { onConflict: 'user_id,id', ignoreDuplicates: true })
-      if (error) return NextResponse.json({ error: `History sync failed: ${error.message}` }, { status: 500 })
+      if (error) return serverError('History sync failed', error.message)
     }
     const existing = await readAllPages<{ id: string }, { message: string }>((from, to) =>
       supabase
@@ -115,13 +116,13 @@ export async function POST(req: NextRequest) {
         .range(from, to)
     )
     if (existing.error) {
-      return NextResponse.json({ error: `History sync failed: ${existing.error.message}` }, { status: 500 })
+      return serverError('History sync failed', existing.error.message)
     }
     const keep = new Set(desktopRows.map(r => r.id))
     const stale = existing.data.map(r => r.id).filter(id => !keep.has(id))
     for (const part of chunks(stale)) {
       const { error } = await supabase.from('synced_history').delete().eq('user_id', userId).in('id', part)
-      if (error) return NextResponse.json({ error: `History sync failed: ${error.message}` }, { status: 500 })
+      if (error) return serverError('History sync failed', error.message)
     }
     synced.history = kept.length
     historySkipped = history.length - kept.length
@@ -130,7 +131,7 @@ export async function POST(req: NextRequest) {
   // Lexicon: the desktop's whole list (capped at 500 entries locally).
   if (lexicon) {
     const error = await replaceLexicon(supabase, userId, lexicon, new Date().toISOString())
-    if (error) return NextResponse.json({ error: `Lexicon sync failed: ${error.message}` }, { status: 500 })
+    if (error) return serverError('Lexicon sync failed', error.message)
     synced.lexicon = lexicon.length
   }
 
@@ -142,7 +143,7 @@ export async function POST(req: NextRequest) {
       .from('synced_meetings')
       .upsert(meetings.map(session => toMeetingRow(userId, session)), { onConflict: 'user_id,id' })
     if (upsertError) {
-      return NextResponse.json({ error: `Meeting sync failed: ${upsertError.message}` }, { status: 500 })
+      return serverError('Meeting sync failed', upsertError.message)
     }
     synced.meetings = meetings.length
   }

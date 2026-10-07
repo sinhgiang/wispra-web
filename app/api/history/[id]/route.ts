@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { serverError } from '@/lib/api-errors'
 import { createAdminClient, validateToken } from '@/lib/supabase-server'
 import { CLEAR_ALL_ID, recordDeletions } from '@/lib/history-deletions'
 
@@ -31,7 +32,7 @@ export async function DELETE(req: NextRequest, { params }: Props) {
   // devices never hear of would come back with their next sync).
   const { error: markError } = await recordDeletions(supabase, userId, [id], new Date().toISOString())
   if (markError) {
-    return NextResponse.json({ error: `Could not delete the entry: ${markError.message}` }, { status: 500 })
+    return serverError('Could not delete the entry', markError.message)
   }
 
   // Only ever this user's row: someone else's entry with the same id is untouched.
@@ -41,11 +42,11 @@ export async function DELETE(req: NextRequest, { params }: Props) {
     .eq('user_id', userId)
     .eq('id', id)
   if (findError) {
-    return NextResponse.json({ error: `Could not delete the entry: ${findError.message}` }, { status: 500 })
+    return serverError('Could not delete the entry', findError.message)
   }
   const { error } = await supabase.from('synced_history').delete().eq('user_id', userId).eq('id', id)
   if (error) {
-    return NextResponse.json({ error: `Could not delete the entry: ${error.message}` }, { status: 500 })
+    return serverError('Could not delete the entry', error.message)
   }
 
   return NextResponse.json({ ok: true, deleted: (existing ?? []).length })

@@ -1,5 +1,6 @@
 import { randomBytes, createHash } from 'crypto'
 import { NextRequest, NextResponse } from 'next/server'
+import { serverError } from '@/lib/api-errors'
 import { createAdminClient, validateToken } from '@/lib/supabase-server'
 
 // A link with no expiry chosen stops working after this many days (T-0201, T3):
@@ -43,7 +44,7 @@ export async function GET(req: NextRequest) {
     .maybeSingle()
 
   if (error) {
-    return NextResponse.json({ error: `Status lookup failed: ${error.message}` }, { status: 500 })
+    return serverError('Status lookup failed', error.message)
   }
 
   return NextResponse.json({
@@ -80,7 +81,7 @@ export async function POST(req: NextRequest) {
     )
 
   if (error) {
-    return NextResponse.json({ error: `Token generation failed: ${error.message}` }, { status: 500 })
+    return serverError('Token generation failed', error.message)
   }
 
   return NextResponse.json({ token, expiresAt })
@@ -96,7 +97,7 @@ export async function DELETE(req: NextRequest) {
   const supabase = createAdminClient()
   const { error } = await supabase.from('mcp_tokens').delete().eq('user_id', userId)
   if (error) {
-    return NextResponse.json({ error: `Revoke failed: ${error.message}` }, { status: 500 })
+    return serverError('Revoke failed', error.message)
   }
 
   return NextResponse.json({ ok: true })
