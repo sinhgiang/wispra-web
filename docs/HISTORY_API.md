@@ -126,11 +126,21 @@ write failed.
 ## How the desktop sync works with phone entries
 
 The desktop app syncs through `POST /api/sync`. For history it sends its whole
-local list (its last 100 entries) every time. The server deletes the user's entries
-**whose id does not start with `mobile-`** and stores the desktop's list in their
-place. Entries from the phone are left untouched, so they survive every desktop sync
-(tested in `tests/history-routes.test.ts`). An empty desktop list removes only the
-desktop's entries.
+local list (its last 100 entries) every time. The server makes the user's entries
+**whose id does not start with `mobile-`** match that list: it writes the list
+first, then removes the desktop entries the list no longer has, so a failure part
+way keeps the old entries. Entries from the phone are left untouched, so they
+survive every desktop sync, and a copy of a phone entry in the desktop's list never
+overwrites it (tested in `tests/history-routes.test.ts` and
+`tests/sync-validation.test.ts`). An empty desktop list removes only the desktop's
+entries.
+
+The whole request is checked before anything is written or removed; one bad item
+answers `400` with the first problem (e.g. `history[3]: "createdAt" must be an ISO
+date string`) and changes nothing. Limits per request: 1,000 history entries (same
+fields and sizes as for the merge below, any id), 2,000 learned words, 200 meetings
+(each with `id`, `createdAt`, and at most 3,000,000 characters of transcript, notes
+and language settings together). The same id twice: the last one is kept.
 
 Deleted entries are left out of what the desktop sends (see below): the answer is
 `{ "ok": true, "synced": { "history": <stored>, … }, "historySkipped": <n> }`,

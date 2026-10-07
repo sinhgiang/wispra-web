@@ -1,15 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createAdminClient, validateToken } from '@/lib/supabase-server'
-import {
-  cleanVocabulary,
-  fromLexiconRow,
-  invalidLexiconEntry,
-  LEXICON_MAX,
-  toLexiconRow,
-  type LexiconEntry,
-} from '@/lib/lexicon'
+import { checkedLexicon, cleanVocabulary, fromLexiconRow, replaceLexicon, type LexiconEntry } from '@/lib/lexicon'
 import { isMissingTable } from '@/lib/history-deletions'
-import { chunks, readAllPages } from '@/lib/supabase-paging'
+import { readAllPages } from '@/lib/supabase-paging'
 
 /** The signed-in user's id, or a 401 response. */
 async function signedInUser(req: NextRequest): Promise<string | NextResponse> {
@@ -83,17 +76,10 @@ export async function PUT(req: NextRequest) {
   }
   let entries: LexiconEntry[] | undefined
   if (body.lexicon !== undefined) {
-    if (!Array.isArray(body.lexicon) || body.lexicon.length > LEXICON_MAX) {
-      return NextResponse.json({ error: `"lexicon" must be an array of at most ${LEXICON_MAX} entries` }, { status: 400 })
-    }
-    for (let i = 0; i < body.lexicon.length; i++) {
-      const problem = invalidLexiconEntry(body.lexicon[i])
-      if (problem) return NextResponse.json({ error: `lexicon[${i}]: ${problem}` }, { status: 400 })
-    }
     // The same id twice: the last one wins.
-    const byId = new Map<string, LexiconEntry>()
-    for (const entry of body.lexicon as LexiconEntry[]) byId.set(entry.id, entry)
-    entries = [...byId.values()]
+    const checked = checkedLexicon(body.lexicon)
+    if ('error' in checked) return NextResponse.json({ error: checked.error }, { status: 400 })
+    entries = checked.entries
   }
 
   const supabase = createAdminClient()
@@ -110,24 +96,10 @@ export async function PUT(req: NextRequest) {
   }
 
   if (entries !== undefined) {
-    // Write the new list first, then remove what it no longer has: a failure part
+    // Written first, then what the list no longer has is removed: a failure part
     // way leaves the old words in place rather than an empty list.
-    for (const part of chunks(entries.map(entry => toLexiconRow(userId, entry, now)))) {
-      const { error } = await supabase.from('synced_lexicon').upsert(part, { onConflict: 'user_id,id' })
-      if (error) return NextResponse.json({ error: `Could not save learned words: ${error.message}` }, { status: 500 })
-    }
-    const existing = await readAllPages<{ id: string }, { message: string }>((from, to) =>
-      supabase.from('synced_lexicon').select('id').eq('user_id', userId).order('id', { ascending: true }).range(from, to)
-    )
-    if (existing.error) {
-      return NextResponse.json({ error: `Could not save learned words: ${existing.error.message}` }, { status: 500 })
-    }
-    const keep = new Set(entries.map(e => e.id))
-    const stale = existing.data.map(r => r.id).filter(id => !keep.has(id))
-    for (const part of chunks(stale)) {
-      const { error } = await supabase.from('synced_lexicon').delete().eq('user_id', userId).in('id', part)
-      if (error) return NextResponse.json({ error: `Could not save learned words: ${error.message}` }, { status: 500 })
-    }
+    const error = await replaceLexicon(supabase, userId, entries, now)
+    if (error) return NextResponse.json({ error: `Could not save learned words: ${error.message}` }, { status: 500 })
   }
 
   return NextResponse.json({

@@ -1,3 +1,6 @@
+import type { SupabaseClient } from '@supabase/supabase-js'
+import { chunks, readAllPages } from '@/lib/supabase-paging'
+
 // Custom Vocabulary (public.synced_vocabulary) and Learned words
 // (public.synced_lexicon), per account, for GET / PUT /api/lexicon.
 // Learned entries have the same shape the desktop app sends to /api/sync.
@@ -111,4 +114,46 @@ export function cleanVocabulary(value: unknown): { terms: string[] } | { error: 
   }
   if (terms.length > VOCABULARY_MAX) return { error: `at most ${VOCABULARY_MAX} vocabulary terms` }
   return { terms }
+}
+
+/**
+ * Makes `entries` the user's whole learned-word list: writes them first, then
+ * removes the ids the list no longer has, so a failure part way keeps the old
+ * words instead of leaving an empty list. Used by PUT /api/lexicon and /api/sync.
+ */
+export async function replaceLexicon(
+  supabase: SupabaseClient,
+  userId: string,
+  entries: LexiconEntry[],
+  now: string
+): Promise<{ message: string } | null> {
+  for (const part of chunks(entries.map(entry => toLexiconRow(userId, entry, now)))) {
+    const { error } = await supabase.from('synced_lexicon').upsert(part, { onConflict: 'user_id,id' })
+    if (error) return error
+  }
+  const existing = await readAllPages<{ id: string }, { message: string }>((from, to) =>
+    supabase.from('synced_lexicon').select('id').eq('user_id', userId).order('id', { ascending: true }).range(from, to)
+  )
+  if (existing.error) return existing.error
+  const keep = new Set(entries.map(e => e.id))
+  const stale = existing.data.map(r => r.id).filter(id => !keep.has(id))
+  for (const part of chunks(stale)) {
+    const { error } = await supabase.from('synced_lexicon').delete().eq('user_id', userId).in('id', part)
+    if (error) return error
+  }
+  return null
+}
+
+/** The list to store: every entry checked, the same id twice keeps the last; or why not. */
+export function checkedLexicon(value: unknown): { entries: LexiconEntry[] } | { error: string } {
+  if (!Array.isArray(value) || value.length > LEXICON_MAX) {
+    return { error: `"lexicon" must be an array of at most ${LEXICON_MAX} entries` }
+  }
+  for (let i = 0; i < value.length; i++) {
+    const problem = invalidLexiconEntry(value[i])
+    if (problem) return { error: `lexicon[${i}]: ${problem}` }
+  }
+  const byId = new Map<string, LexiconEntry>()
+  for (const entry of value as LexiconEntry[]) byId.set(entry.id, entry)
+  return { entries: [...byId.values()] }
 }

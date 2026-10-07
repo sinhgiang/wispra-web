@@ -89,6 +89,7 @@ export function fakeSupabase(pg: PGlite, { maxRows = 1000 }: { maxRows?: number 
       let columns = '*'
       let rows: Record<string, unknown>[] = []
       let onConflict = ''
+      let ignoreDuplicates = false
       const filters: { col: string; op: '=' | '<' | 'NOT LIKE' | 'IN'; value: unknown }[] = []
       let orderBy = ''
       let limit: number | null = null
@@ -125,7 +126,7 @@ export function fakeSupabase(pg: PGlite, { maxRows = 1000 }: { maxRows?: number 
               if (mode === 'upsert') {
                 const keys = onConflict.split(',').map(c => c.trim())
                 const updates = cols.filter(c => !keys.includes(c)).map(c => `${ident(c)} = EXCLUDED.${ident(c)}`)
-                sql += ` ON CONFLICT (${keys.map(ident).join(', ')}) DO ${updates.length ? `UPDATE SET ${updates.join(', ')}` : 'NOTHING'}`
+                sql += ` ON CONFLICT (${keys.map(ident).join(', ')}) DO ${updates.length && !ignoreDuplicates ? `UPDATE SET ${updates.join(', ')}` : 'NOTHING'}`
               }
               await pg.query(sql, cols.map(c => row[c]))
             }
@@ -160,10 +161,11 @@ export function fakeSupabase(pg: PGlite, { maxRows = 1000 }: { maxRows?: number 
           rows = Array.isArray(data) ? data : [data]
           return query
         },
-        upsert(data: Record<string, unknown> | Record<string, unknown>[], options?: { onConflict?: string }) {
+        upsert(data: Record<string, unknown> | Record<string, unknown>[], options?: { onConflict?: string; ignoreDuplicates?: boolean }) {
           mode = 'upsert'
           rows = Array.isArray(data) ? data : [data]
           onConflict = options?.onConflict ?? ''
+          ignoreDuplicates = options?.ignoreDuplicates === true
           return query
         },
         eq(col: string, value: unknown) {
