@@ -257,11 +257,15 @@ describe('when the deleted entries cannot be read', () => {
 
   it('a temporary database error stops the desktop sync before anything is deleted or written', async () => {
     state.supabase = withBrokenDeletions('08006', 'connection reset')
+    const log = vi.spyOn(console, 'error').mockImplementation(() => {})
 
     const res = await sync('alice-token', [entry('desk-2', 2), entry('desk-3', 3)])
 
     expect(res.status).toBe(500)
-    expect((await res.json()).error).toContain('connection reset')
+    // The database's own words go to the server log, not to the caller (T-0201, L4).
+    expect((await res.json()).error).toBe('History sync failed')
+    expect(log).toHaveBeenCalledWith('[api] History sync failed:', expect.stringContaining('connection reset'))
+    log.mockRestore()
     // desk-1 was not wiped, deleted desk-2 was not brought back, desk-3 was not added.
     expect(await stored()).toEqual(['desk-1', 'mobile-1'])
   })

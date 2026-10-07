@@ -15,6 +15,18 @@ export const AI_TOKEN_LIMITS = {
 
 export type AiPlan = Plan
 
+// One answer may not ask for more than this many tokens (T-0201, C3): the monthly
+// quota is checked before the call, so an uncapped max_tokens let one request run
+// far past it. Twice the default, so a long summary still fits.
+export const DEFAULT_MAX_TOKENS = 8192
+export const MAX_TOKENS_CAP = 16_384
+
+/** The max_tokens sent to Groq: the app's number, at most MAX_TOKENS_CAP; the default if it sent none or nonsense. */
+export function cappedMaxTokens(value: unknown): number {
+  if (typeof value !== 'number' || !Number.isFinite(value) || value < 1) return DEFAULT_MAX_TOKENS
+  return Math.min(Math.floor(value), MAX_TOKENS_CAP)
+}
+
 /** Machine-readable error code returned with HTTP 402 when the quota is used up. */
 export const AI_QUOTA_EXCEEDED_CODE = 'ai_quota_exceeded'
 

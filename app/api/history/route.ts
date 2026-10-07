@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { serverError } from '@/lib/api-errors'
 import { createAdminClient, validateToken } from '@/lib/supabase-server'
 import { fromRow, HISTORY_PAGE_DEFAULT, HISTORY_PAGE_MAX } from '@/lib/history'
 import { CLEAR_ALL_ID, getDeletions, recordDeletions } from '@/lib/history-deletions'
@@ -57,11 +58,11 @@ export async function GET(req: NextRequest) {
   ])
 
   if (error) {
-    return NextResponse.json({ error: `Could not read history: ${error.message}` }, { status: 500 })
+    return serverError('Could not read history', error.message)
   }
   // Without the deletions a device would move its `since` past them and never hear of them.
   if (!deletionsResult.ok) {
-    return NextResponse.json({ error: `Could not read deleted entries: ${deletionsResult.error}` }, { status: 500 })
+    return serverError('Could not read deleted entries', deletionsResult.error)
   }
   const deletions = deletionsResult.deletions
 
@@ -103,7 +104,7 @@ export async function DELETE(req: NextRequest) {
     supabase.from('synced_history').select('id').eq('user_id', userId).order('id', { ascending: true }).range(from, to)
   )
   if (listError) {
-    return NextResponse.json({ error: `Could not delete history: ${listError.message}` }, { status: 500 })
+    return serverError('Could not delete history', listError.message)
   }
   const ids = existing.map(row => row.id)
 
@@ -113,12 +114,12 @@ export async function DELETE(req: NextRequest) {
   // mark covers entries the server has not seen yet and is written last.
   const { error: markError } = await recordDeletions(supabase, userId, [...ids, CLEAR_ALL_ID], clearedAt)
   if (markError) {
-    return NextResponse.json({ error: `Could not delete history: ${markError.message}` }, { status: 500 })
+    return serverError('Could not delete history', markError.message)
   }
 
   const { error } = await supabase.from('synced_history').delete().eq('user_id', userId)
   if (error) {
-    return NextResponse.json({ error: `Could not delete history: ${error.message}` }, { status: 500 })
+    return serverError('Could not delete history', error.message)
   }
 
   return NextResponse.json({ ok: true, deleted: ids.length, clearedAt })

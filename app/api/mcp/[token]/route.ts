@@ -3,6 +3,7 @@ import { NextResponse, type NextRequest } from 'next/server'
 import { createMcpHandler } from 'mcp-handler'
 import { createAdminClient } from '@/lib/supabase-server'
 import { registerTools } from '@/lib/mcp/tools'
+import { serverError } from '@/lib/api-errors'
 
 function hashToken(token: string): string {
   return createHash('sha256').update(token).digest('hex')
@@ -33,7 +34,7 @@ async function handle(req: NextRequest, context: { params: Promise<{ token: stri
   const resolved = await resolveUserId(token)
   if (!resolved.ok) {
     if (resolved.dbError) {
-      return NextResponse.json({ error: `Connection lookup failed: ${resolved.dbError}` }, { status: 500 })
+      return serverError('Connection lookup failed', resolved.dbError)
     }
     // 403, not 401: a 401 tells MCP clients (incl. Claude.ai) "this server needs OAuth,"
     // which sends them into a dynamic-client-registration flow Wispra never implements —

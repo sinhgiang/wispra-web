@@ -4,6 +4,7 @@ import { createAdminClient } from '@/lib/supabase-server'
 import { computeStats } from './stats'
 import { lexiconMode } from './lexiconMode'
 import type { HistoryRow, MeetingRow, LexiconRow } from './types'
+import { toolError } from '@/lib/api-errors'
 
 function clamp(value: number | undefined, fallback: number, max: number): number {
   if (value === undefined) return fallback
@@ -34,7 +35,7 @@ export function registerTools(server: McpServer, userId: string): void {
         .from('synced_history')
         .select('text, created_at, duration_seconds')
         .eq('user_id', userId)
-      if (error) return json({ error: error.message })
+      if (error) return json(toolError('Could not read usage stats', error))
       const stats = computeStats((data ?? []) as HistoryRow[])
       return json(stats)
     }
@@ -55,7 +56,7 @@ export function registerTools(server: McpServer, userId: string): void {
         .eq('user_id', userId)
         .order('created_at', { ascending: false })
         .limit(clamp(limit, 20, 50))
-      if (error) return json({ error: error.message })
+      if (error) return json(toolError('Could not list meetings', error))
       return json(
         (data ?? []).map((m) => ({
           id: m.id,
@@ -84,7 +85,7 @@ export function registerTools(server: McpServer, userId: string): void {
         .eq('user_id', userId)
         .eq('id', id)
         .maybeSingle()
-      if (error) return json({ error: error.message })
+      if (error) return json(toolError('Could not read the meeting', error))
       if (!data) return json({ error: `No meeting found with id "${id}".` })
       return json({
         id: data.id,
@@ -113,7 +114,7 @@ export function registerTools(server: McpServer, userId: string): void {
         .select('id, title, summary, created_at, duration_ms, status, segments')
         .eq('user_id', userId)
         .order('created_at', { ascending: false })
-      if (error) return json({ error: error.message })
+      if (error) return json(toolError('Could not search meetings', error))
 
       const needle = query.toLowerCase()
       const matches = ((data ?? []) as MeetingRow[])
@@ -151,7 +152,7 @@ export function registerTools(server: McpServer, userId: string): void {
         .select('id, text, raw_text, created_at, app, topic')
         .eq('user_id', userId)
         .order('created_at', { ascending: false })
-      if (error) return json({ error: error.message })
+      if (error) return json(toolError('Could not search history', error))
 
       const needle = query.toLowerCase()
       const matches = ((data ?? []) as HistoryRow[])
@@ -186,7 +187,7 @@ export function registerTools(server: McpServer, userId: string): void {
         .eq('user_id', userId)
         .eq('id', id)
         .maybeSingle()
-      if (error) return json({ error: error.message })
+      if (error) return json(toolError('Could not read the history entry', error))
       if (!data) return json({ error: `No history entry found with id "${id}".` })
       return json({
         id: data.id,
@@ -212,7 +213,7 @@ export function registerTools(server: McpServer, userId: string): void {
         .from('synced_lexicon')
         .select('id, term, heard_as, count, enabled, pinned, source, last_seen')
         .eq('user_id', userId)
-      if (error) return json({ error: error.message })
+      if (error) return json(toolError('Could not read the vocabulary', error))
       const entries = ((data ?? []) as LexiconRow[]).map((e) => ({
         term: e.term,
         heardAs: e.heard_as ?? [],

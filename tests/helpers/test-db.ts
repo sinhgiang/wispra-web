@@ -85,10 +85,12 @@ export function fakeSupabase(pg: PGlite, { maxRows = 1000 }: { maxRows?: number 
   const client = {
     from(table: string) {
       const target = `public.${ident(table)}`
-      let mode: 'select' | 'delete' | 'insert' | 'upsert' = 'select'
+      let mode: 'select' | 'delete' | 'insert' | 'upsert' | 'update' = 'select'
+      let changes: Record<string, unknown> = {}
       let columns = '*'
       let rows: Record<string, unknown>[] = []
       let onConflict = ''
+      let ignoreDuplicates = false
       const filters: { col: string; op: '=' | '<' | 'NOT LIKE' | 'IN'; value: unknown }[] = []
       let orderBy = ''
       let limit: number | null = null
@@ -111,6 +113,12 @@ export function fakeSupabase(pg: PGlite, { maxRows = 1000 }: { maxRows?: number 
             )
             return { data: res.rows, error: null }
           }
+          if (mode === 'update') {
+            const cols = Object.keys(changes)
+            const set = cols.map((c, i) => ident(c) + ' = $' + (i + 1)).join(', ')
+            await pg.query('UPDATE ' + target + ' SET ' + set + where(cols.length), [...cols.map(c => changes[c]), ...params()])
+            return { data: null, error: null }
+          }
           if (mode === 'delete') {
             await pg.query(`DELETE FROM ${target}${where()}`, params())
             return { data: null, error: null }
@@ -125,7 +133,7 @@ export function fakeSupabase(pg: PGlite, { maxRows = 1000 }: { maxRows?: number 
               if (mode === 'upsert') {
                 const keys = onConflict.split(',').map(c => c.trim())
                 const updates = cols.filter(c => !keys.includes(c)).map(c => `${ident(c)} = EXCLUDED.${ident(c)}`)
-                sql += ` ON CONFLICT (${keys.map(ident).join(', ')}) DO ${updates.length ? `UPDATE SET ${updates.join(', ')}` : 'NOTHING'}`
+                sql += ` ON CONFLICT (${keys.map(ident).join(', ')}) DO ${updates.length && !ignoreDuplicates ? `UPDATE SET ${updates.join(', ')}` : 'NOTHING'}`
               }
               await pg.query(sql, cols.map(c => row[c]))
             }
@@ -155,15 +163,21 @@ export function fakeSupabase(pg: PGlite, { maxRows = 1000 }: { maxRows?: number 
           mode = 'delete'
           return query
         },
+        update(data: Record<string, unknown>) {
+          mode = 'update'
+          changes = data
+          return query
+        },
         insert(data: Record<string, unknown> | Record<string, unknown>[]) {
           mode = 'insert'
           rows = Array.isArray(data) ? data : [data]
           return query
         },
-        upsert(data: Record<string, unknown> | Record<string, unknown>[], options?: { onConflict?: string }) {
+        upsert(data: Record<string, unknown> | Record<string, unknown>[], options?: { onConflict?: string; ignoreDuplicates?: boolean }) {
           mode = 'upsert'
           rows = Array.isArray(data) ? data : [data]
           onConflict = options?.onConflict ?? ''
+          ignoreDuplicates = options?.ignoreDuplicates === true
           return query
         },
         eq(col: string, value: unknown) {

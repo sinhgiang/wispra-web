@@ -70,8 +70,14 @@ const chatRequest = (token: string) =>
 const transcribeRequest = (token: string) =>
   new NextRequest('http://localhost/api/transcribe', {
     method: 'POST',
-    headers: { ...bearer(token), 'content-type': 'audio/webm', 'x-audio-duration-seconds': '60' },
-    body: new Uint8Array([1, 2, 3]),
+    // Multipart, as Groq takes it; a 3-byte file the server cannot measure, so the
+    // app's 60-second header is what gets counted.
+    headers: { ...bearer(token), 'x-audio-duration-seconds': '60' },
+    body: (() => {
+      const form = new FormData()
+      form.append('file', new Blob([new Uint8Array([1, 2, 3])], { type: 'audio/webm' }), 'audio.webm')
+      return form
+    })(),
   })
 
 const usageRequest = (token: string) => new NextRequest('http://localhost/api/usage', { headers: bearer(token) })

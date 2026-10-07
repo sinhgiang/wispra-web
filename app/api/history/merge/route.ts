@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { serverError } from '@/lib/api-errors'
 import { createAdminClient, validateToken } from '@/lib/supabase-server'
 import { HISTORY_MERGE_MAX, invalidEntry, toRow, type HistoryEntry } from '@/lib/history'
 import { getDeletions, isDeleted } from '@/lib/history-deletions'
@@ -43,7 +44,7 @@ export async function POST(req: NextRequest) {
   const deletionsResult = await getDeletions(supabase, userId)
   if (!deletionsResult.ok) {
     // Not knowing what was deleted, storing could bring a deleted entry back: store nothing.
-    return NextResponse.json({ error: `Could not merge history: ${deletionsResult.error}` }, { status: 500 })
+    return serverError('Could not merge history', deletionsResult.error)
   }
   const deletions = deletionsResult.deletions
   const kept = [...byId.values()].filter(entry => !isDeleted(entry, deletions))
@@ -54,7 +55,7 @@ export async function POST(req: NextRequest) {
     const rows = kept.map(entry => toRow(userId, entry))
     const { error } = await supabase.from('synced_history').upsert(rows, { onConflict: 'user_id,id' })
     if (error) {
-      return NextResponse.json({ error: `Could not merge history: ${error.message}` }, { status: 500 })
+      return serverError('Could not merge history', error.message)
     }
   }
 
