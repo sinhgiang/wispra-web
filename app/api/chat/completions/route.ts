@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createAdminClient, validateToken } from '@/lib/supabase-server'
-import { AI_QUOTA_EXCEEDED_CODE, getAiQuotaStatus, recordAiTokens } from '@/lib/ai-quota'
+import { AI_QUOTA_EXCEEDED_CODE, cappedMaxTokens, getAiQuotaStatus, recordAiTokens } from '@/lib/ai-quota'
 
 const GROQ_CHAT_URL = 'https://api.groq.com/openai/v1/chat/completions'
 
@@ -213,7 +213,7 @@ export async function POST(req: NextRequest) {
   // Behave like a direct Groq call, so the app handles both paths the same way:
   // JSON mode is passed on, and Groq's rate-limit headers come back.
   const responseFormat = allowedResponseFormat(body.response_format)
-  const maxTokens = body.max_tokens ?? 8192
+  const maxTokens = cappedMaxTokens(body.max_tokens)
   const messages = body.messages
 
   /** One call to Groq with `withModel`; its tokens are recorded and it is logged. */
