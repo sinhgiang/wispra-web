@@ -85,7 +85,8 @@ export function fakeSupabase(pg: PGlite, { maxRows = 1000 }: { maxRows?: number 
   const client = {
     from(table: string) {
       const target = `public.${ident(table)}`
-      let mode: 'select' | 'delete' | 'insert' | 'upsert' = 'select'
+      let mode: 'select' | 'delete' | 'insert' | 'upsert' | 'update' = 'select'
+      let changes: Record<string, unknown> = {}
       let columns = '*'
       let rows: Record<string, unknown>[] = []
       let onConflict = ''
@@ -111,6 +112,12 @@ export function fakeSupabase(pg: PGlite, { maxRows = 1000 }: { maxRows?: number 
               params()
             )
             return { data: res.rows, error: null }
+          }
+          if (mode === 'update') {
+            const cols = Object.keys(changes)
+            const set = cols.map((c, i) => ident(c) + ' = $' + (i + 1)).join(', ')
+            await pg.query('UPDATE ' + target + ' SET ' + set + where(cols.length), [...cols.map(c => changes[c]), ...params()])
+            return { data: null, error: null }
           }
           if (mode === 'delete') {
             await pg.query(`DELETE FROM ${target}${where()}`, params())
@@ -154,6 +161,11 @@ export function fakeSupabase(pg: PGlite, { maxRows = 1000 }: { maxRows?: number 
         },
         delete() {
           mode = 'delete'
+          return query
+        },
+        update(data: Record<string, unknown>) {
+          mode = 'update'
+          changes = data
           return query
         },
         insert(data: Record<string, unknown> | Record<string, unknown>[]) {

@@ -2,6 +2,20 @@ import { randomBytes, createHash } from 'crypto'
 import { NextRequest, NextResponse } from 'next/server'
 import { createAdminClient, validateToken } from '@/lib/supabase-server'
 
+// A link with no expiry chosen stops working after this many days (T-0201, T3):
+// the link is a bearer secret in a URL, which ends up in logs and chat histories.
+const DEFAULT_EXPIRY_DAYS = 90
+
+/**
+ * Days until a new link expires: a positive number the app sent; null only when
+ * it explicitly sent null ("never expires"); DEFAULT_EXPIRY_DAYS otherwise.
+ */
+function expiryDays(body: { expiresInDays?: unknown }): number | null {
+  if (body.expiresInDays === null) return null
+  const days = body.expiresInDays
+  return typeof days === 'number' && Number.isFinite(days) && days > 0 ? days : DEFAULT_EXPIRY_DAYS
+}
+
 function hashToken(token: string): string {
   return createHash('sha256').update(token).digest('hex')
 }
@@ -44,15 +58,16 @@ export async function GET(req: NextRequest) {
 // plaintext token exactly once — only its sha256 hash is persisted server-side.
 // Rotating overwrites the stored hash, immediately invalidating any previous link.
 // Body may include { expiresInDays }: a positive number of days until the new link
-// stops working, or omitted/null for a link that never expires.
+// stops working, or null for a link that never expires. Omitted (or not a positive
+// number): DEFAULT_EXPIRY_DAYS.
 export async function POST(req: NextRequest) {
   const userId = await authenticate(req)
   if (!userId) {
     return NextResponse.json({ error: 'Invalid or expired token' }, { status: 401 })
   }
 
-  const body = (await req.json().catch(() => ({}))) as { expiresInDays?: number | null }
-  const expiresInDays = typeof body.expiresInDays === 'number' && body.expiresInDays > 0 ? body.expiresInDays : null
+  const body = ((await req.json().catch(() => ({}))) ?? {}) as { expiresInDays?: unknown }
+  const expiresInDays = expiryDays(body)
   const expiresAt = expiresInDays ? new Date(Date.now() + expiresInDays * 86_400_000).toISOString() : null
 
   const token = randomBytes(32).toString('base64url')
