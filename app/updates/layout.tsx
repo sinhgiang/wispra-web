@@ -4,6 +4,7 @@ import { MicIcon } from '../icons'
 import { RELEASES_URL } from '@/lib/wispra-releases'
 import { getUpdates } from './data'
 import VersionNav from './VersionNav'
+import { IPHONE_RELEASES } from './iphone'
 
 // Re-read the releases on GitHub at most once an hour.
 export const revalidate = 3600
@@ -41,11 +42,16 @@ export default async function UpdatesLayout({ children }: { children: React.Reac
         <div className="mb-6 sm:mb-10">
           <p className="text-xs font-semibold uppercase tracking-widest text-brand mb-2">Updates</p>
           <h1 className="text-3xl sm:text-4xl font-bold tracking-tight text-text-primary">What&apos;s new in Wispra</h1>
-          <p className="mt-2 text-text-muted">Every version, what changed, and how it looks.</p>
+          <p className="mt-2 text-text-muted">Every version for Mac, Windows and iPhone: what changed, and how it looks.</p>
         </div>
 
         <div className="lg:grid lg:grid-cols-[240px_minmax(0,1fr)] lg:gap-10">
-          <VersionNav items={releases.map(r => ({ version: r.version, date: r.date }))} />
+          <VersionNav
+            lists={{
+              desktop: releases.map(r => ({ version: r.version, date: r.date })),
+              iphone: IPHONE_RELEASES.map(r => ({ version: r.version, date: r.date })),
+            }}
+          />
           <main className="min-w-0">{children}</main>
         </div>
       </div>

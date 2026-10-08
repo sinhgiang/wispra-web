@@ -5,6 +5,10 @@ desktop release with what changed and one screenshot. The newest version is show
 as **Latest** and opens at `/updates`; every other version has its own page at
 `/updates/<version>` (for example `/updates/0.6.4`).
 
+A second list, **Wispra for iPhone**, lives at `/updates/iphone` (see the last
+section). A switch above the version list moves between "Mac & Windows" and
+"iPhone".
+
 ## Where the entries come from
 
 | Source | What | Used for |
@@ -90,3 +94,32 @@ two design prototypes for the mind map and four-column transcript, then rendered
 with headless Chrome. Window frames, the Windows desktop, notifications and the
 sample apps being dictated into were drawn by hand, and some images have a soft
 ring around the setting that changed. All text is invented sample content.
+
+## Wispra for iPhone
+
+The iPhone app has its own list at `/updates/iphone` (latest build) and
+`/updates/iphone/<build>` (older builds), numbered by **TestFlight build**
+("Build 6"). It is kept **in this repository**, in `app/updates/iphone.ts`, and
+**never** in `sinhgiang/wispra-releases`: that repository feeds the desktop app's
+automatic updates, and an iPhone release there would be offered to desktop users.
+
+To add a build:
+
+1. Add an object at the **top** of `IPHONE_RELEASES` in `app/updates/iphone.ts`:
+   `version` is the build number as a string (`'7'`), `date` is `YYYY-MM-DD`,
+   `title` is `Wispra for iPhone, build 7`, an optional `summary`, and `new` /
+   `improved` / `fixed` bullets in plain English (`**bold**` leads are fine), and
+   `notes` for a "Good to know" list (limits or behaviour, not changes). Keep
+   `image: null` and `source: 'repo'`.
+2. List up to three `screens`, each with a `caption` saying what it shows. Until a
+   screenshot exists, use `src: null`: the page shows a "Screenshot coming soon"
+   frame in its place.
+3. Screenshots: real iPhone screenshots with **sample content only** (no real
+   names, recordings, email addresses or keys), saved as
+   `public/updates/iphone/build-<build>-<n>.webp` (portrait, 1179 × 2556 or the
+   phone's own size, under about 250 KB), then set `src` to
+   `/updates/iphone/build-<build>-<n>.webp`.
+4. `npm test`, then check `/updates/iphone` on a phone width and a desktop width.
+
+This needs a pull request and a deploy, unlike desktop releases, which come from
+GitHub by themselves.
