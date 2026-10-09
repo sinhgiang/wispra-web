@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createAdminClient, validateToken } from '@/lib/supabase-server'
 import { AI_QUOTA_EXCEEDED_CODE, cappedMaxTokens, getAiQuotaStatus, recordAiTokens } from '@/lib/ai-quota'
 import { cleanGroqError } from '@/lib/groq-errors'
+import { afterResponse } from '@/lib/after-response'
 
 const GROQ_CHAT_URL = 'https://api.groq.com/openai/v1/chat/completions'
 
@@ -11,6 +12,8 @@ const GROQ_CHAT_URL = 'https://api.groq.com/openai/v1/chat/completions'
 // instead of being routed straight to a dead model.
 const ALLOWED_MODELS = new Set([
   'openai/gpt-oss-120b',
+  // Smaller and faster; dictation cleanup may ask for it (T-0249).
+  'openai/gpt-oss-20b',
   'llama-3.1-8b-instant',
   'llama3-70b-8192',
   'llama3-8b-8192',
@@ -38,6 +41,16 @@ function isDailyLimit(status: number, text: string): boolean {
 // The desktop app waits 60 s for an AI call; give Groq a little less, so a slow
 // answer still arrives instead of the proxy giving up first.
 const GROQ_TIMEOUT_MS = 55_000
+
+/**
+ * How hard a gpt-oss model thinks before it answers (T-0249): 'low', 'medium' or
+ * 'high' is passed on for gpt-oss models only (other models reject it). Dictation
+ * cleanup asks for 'low': far fewer hidden reasoning tokens, so a shorter wait.
+ */
+function allowedReasoningEffort(value: unknown, model: string): 'low' | 'medium' | 'high' | undefined {
+  if (!model.startsWith('openai/gpt-oss')) return undefined
+  return value === 'low' || value === 'medium' || value === 'high' ? value : undefined
+}
 
 /** JSON mode is passed on; any other response_format is dropped. */
 function allowedResponseFormat(value: unknown): { type: 'json_object' } | undefined {
@@ -73,6 +86,8 @@ function logCall(call: {
   backupFor?: string
   /** What Groq's rate-limit headers say about the server key. */
   limits?: Record<string, number>
+  /** The reasoning_effort passed on to a gpt-oss model, if any. */
+  reasoningEffort?: string
 }): void {
   const data = call.result as
     | { usage?: { prompt_tokens?: number; completion_tokens?: number }; choices?: { finish_reason?: string; message?: { content?: string } }[] }
@@ -92,6 +107,7 @@ function logCall(call: {
     answerChars: typeof choice?.message?.content === 'string' ? choice.message.content.length : undefined,
     ms: Date.now() - call.started,
     ...(call.backupFor ? { backupFor: call.backupFor } : {}),
+    ...(call.reasoningEffort ? { reasoningEffort: call.reasoningEffort } : {}),
     ...(call.limits && Object.keys(call.limits).length ? { limits: call.limits } : {}),
     ...(call.errorText ? { groqError: groqErrorMessage(call.errorText) } : {}),
   }
@@ -165,6 +181,7 @@ export async function POST(req: NextRequest) {
     temperature?: number
     stream?: boolean
     response_format?: unknown
+    reasoning_effort?: unknown
   }
   try {
     body = await req.json()
@@ -220,7 +237,8 @@ export async function POST(req: NextRequest) {
   /** One call to Groq with `withModel`; its tokens are recorded and it is logged. */
   const callGroq = async (withModel: string, backupFor?: string): Promise<GroqAttempt> => {
     const started = Date.now()
-    const log = { model: withModel, jsonMode: !!responseFormat, maxTokens, messages, started, backupFor }
+    const reasoningEffort = allowedReasoningEffort(body.reasoning_effort, withModel)
+    const log = { model: withModel, jsonMode: !!responseFormat, maxTokens, messages, started, backupFor, reasoningEffort }
     let response: Response
     let text: string
     try {
@@ -236,6 +254,7 @@ export async function POST(req: NextRequest) {
           max_tokens: maxTokens,
           temperature: body.temperature ?? 0,
           ...(responseFormat ? { response_format: responseFormat } : {}),
+          ...(reasoningEffort ? { reasoning_effort: reasoningEffort } : {}),
         }),
         signal: AbortSignal.timeout(GROQ_TIMEOUT_MS),
       })
@@ -251,11 +270,12 @@ export async function POST(req: NextRequest) {
       result = JSON.parse(text)
     } catch { /* not JSON — handled by the caller */ }
 
-    // Recorded before any response is returned, so the tokens are counted even if
-    // the client has gone away, and for Groq errors that still report usage.
-    // Best-effort: a failed write does not fail the response.
+    // Recorded once the answer has gone out, so the user does not wait for this
+    // write (T-0249); still counted if the client has gone away, and for Groq
+    // errors that still report usage. Best-effort: a failed write does not fail
+    // the response.
     const tokens = billedTokens(result) ?? (response.ok ? estimateTokens(messages, text) : 0)
-    await recordAiTokens(supabase, userId, quota.month, tokens)
+    await afterResponse(() => recordAiTokens(supabase, userId, quota.month, tokens))
 
     logCall({ ...log, status: response.status, result, errorText: response.ok ? undefined : text, limits: groqLimits(response.headers) })
     return { response, text, result }
