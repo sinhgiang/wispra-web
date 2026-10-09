@@ -4,6 +4,7 @@ import { getAccount } from '@/lib/account'
 import { allowedTranscribeModel, billedSeconds, groqDurationSeconds, wavDurationSeconds } from '@/lib/transcription'
 import { cleanGroqError } from '@/lib/groq-errors'
 import { afterResponse } from '@/lib/after-response'
+import { rateLimitedResponse, takeApiCall } from '@/lib/api-call-limits'
 
 const FREE_LIMIT_SECONDS = 30 * 60 // 30 minutes
 
@@ -34,21 +35,28 @@ export async function POST(req: NextRequest) {
   }
   const authMs = since(started)
 
+  const supabase = createAdminClient()
+
+  // Calls per minute and per day: counted while the upload comes in, so the
+  // count adds no wait, and settled before anything else is checked or sent.
+  const callTaken = takeApiCall(supabase, userId, 'transcribe')
+
   // The audio comes as multipart form data with a `file` field, as for Groq.
   const bodyStarted = Date.now()
-  let form: FormData
+  let form: FormData | null = null
   try {
     form = await req.formData()
-  } catch {
-    return NextResponse.json({ error: 'Send multipart/form-data with a "file" field' }, { status: 400 })
-  }
-  const file = form.get('file')
-  if (!(file instanceof Blob)) {
-    return NextResponse.json({ error: 'Send multipart/form-data with a "file" field' }, { status: 400 })
-  }
+  } catch { /* answered below, once the call is counted */ }
   const bodyMs = since(bodyStarted)
 
-  const supabase = createAdminClient()
+  const call = await callTaken
+  if (!call.allowed) return rateLimitedResponse('transcribe', call)
+
+  const file = form?.get('file')
+  if (!form || !(file instanceof Blob)) {
+    return NextResponse.json({ error: 'Send multipart/form-data with a "file" field' }, { status: 400 })
+  }
+
   const month = currentMonth()
 
   // Plan and this month's seconds are read together: one database round trip
