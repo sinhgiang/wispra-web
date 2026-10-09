@@ -5,7 +5,7 @@
 - Landing page: `app/page.tsx`; the user gets there at `/`.
 - Updates (release notes per desktop version): `app/updates`, `lib/wispra-releases.ts`, `lib/latest-release.ts`; at `/updates` and `/updates/<version>`.
 - Sign-in hand-off to the desktop app: `app/auth/callback`, `app/auth/relay`; opened by the desktop app's sign-in, ends in a `wispra://` link.
-- Transcription: `app/api/transcribe`, `lib/transcription.ts`, requests per minute and per day in `lib/api-call-limits.ts` (table `api_call_counts`, migration 010); called by the desktop/phone app with the user's Supabase token.
+- Transcription: `app/api/transcribe`, `lib/transcription.ts` (model: always `whisper-large-v3-turbo`, then `whisper-large-v3` once if turbo fails; the app's requested model is ignored), requests per minute and per day in `lib/api-call-limits.ts` (table `api_call_counts`, migration 010); called by the desktop/phone app with the user's Supabase token.
 - AI text: `app/api/chat/completions`, `lib/ai-quota.ts`, requests per minute and per day in `lib/api-call-limits.ts`; called by the apps.
 - Usage and plan: `app/api/usage`, `lib/account.ts`; the app's Account page.
 - Cloud sync (History, Meetings, learned words): `app/api/sync`, `app/api/history*`, `app/api/lexicon`, `lib/history*.ts`, `lib/meetings.ts`, `lib/lexicon.ts`; called by the apps.

@@ -4,10 +4,11 @@ import type { PGlite } from '@electric-sql/pglite'
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { createProductionLikeDb, fakeSupabase, queryAs } from './helpers/test-db'
 import {
-  allowedTranscribeModel,
   billedSeconds,
-  DEFAULT_TRANSCRIBE_MODEL,
+  FALLBACK_TRANSCRIBE_MODEL,
   groqDurationSeconds,
+  shouldTryFallbackModel,
+  TRANSCRIBE_MODEL,
   wavDurationSeconds,
 } from '@/lib/transcription'
 
@@ -78,11 +79,14 @@ describe('measuring a transcription', () => {
     expect(billedSeconds({ groq: null, wav: null, clientHeader: '-5', fileBytes: 0 })).toBe(1)
   })
 
-  it('keeps a model only when it is on the allowed list', () => {
-    expect(allowedTranscribeModel('whisper-large-v3')).toBe('whisper-large-v3')
-    expect(allowedTranscribeModel('whisper-large-v3-turbo')).toBe('whisper-large-v3-turbo')
-    expect(allowedTranscribeModel('some-expensive-model')).toBe(DEFAULT_TRANSCRIBE_MODEL)
-    expect(allowedTranscribeModel(null)).toBe(DEFAULT_TRANSCRIBE_MODEL)
+  it('uses turbo, with v3 as the other model', () => {
+    expect(TRANSCRIBE_MODEL).toBe('whisper-large-v3-turbo')
+    expect(FALLBACK_TRANSCRIBE_MODEL).toBe('whisper-large-v3')
+  })
+
+  it('asks the other model only for failures it can help with', () => {
+    for (const status of [404, 429, 500, 502, 503, 529]) expect(shouldTryFallbackModel(status), String(status)).toBe(true)
+    for (const status of [400, 401, 402, 403, 413, 422]) expect(shouldTryFallbackModel(status), String(status)).toBe(false)
   })
 })
 
@@ -174,20 +178,124 @@ describe('POST /api/transcribe', () => {
     expect(fetchMock).not.toHaveBeenCalled()
   })
 
-  it('sends Groq an allowed model and verbose_json, and passes the other fields on', async () => {
+  it('sends Groq turbo whatever model the app asks for, with verbose_json, and passes the other fields on', async () => {
     fetchMock.mockImplementation(async () => groqVerbose({ duration: 2 }))
 
     await request(wav(2), { model: 'some-expensive-model', response_format: 'text', language: 'vi', prompt: 'Wispra' })
     await request(wav(2), { model: 'whisper-large-v3' })
+    await request(wav(2))
 
     const first = fetchMock.mock.calls[0][1].body as FormData
-    expect(first.get('model')).toBe(DEFAULT_TRANSCRIBE_MODEL)
+    expect(first.get('model')).toBe('whisper-large-v3-turbo')
     expect(first.get('response_format')).toBe('verbose_json')
     expect(first.get('language')).toBe('vi')
     expect(first.get('prompt')).toBe('Wispra')
     expect(first.getAll('model')).toHaveLength(1)
     expect((first.get('file') as Blob).size).toBe(wav(2).length)
-    expect((fetchMock.mock.calls[1][1].body as FormData).get('model')).toBe('whisper-large-v3')
+    // The installed desktop app asks for whisper-large-v3: it still gets turbo.
+    expect((fetchMock.mock.calls[1][1].body as FormData).get('model')).toBe('whisper-large-v3-turbo')
+    expect((fetchMock.mock.calls[2][1].body as FormData).get('model')).toBe('whisper-large-v3-turbo')
+    expect(fetchMock).toHaveBeenCalledTimes(3)
+  })
+
+  describe('when turbo fails', () => {
+    const modelOf = (call: number) => (fetchMock.mock.calls[call][1].body as FormData).get('model')
+    const groqError = (status: number) => new Response(JSON.stringify({ error: { message: 'nope' } }), { status })
+    const lines = (spy: unknown) => (spy as { mock: { calls: unknown[][] } }).mock.calls.map(c => String(c[0]))
+    let info: unknown
+    let error: unknown
+
+    beforeEach(() => {
+      info = vi.spyOn(console, 'info').mockImplementation(() => {})
+      error = vi.spyOn(console, 'error').mockImplementation(() => {})
+    })
+    afterEach(() => vi.restoreAllMocks())
+
+    it.each([429, 500, 503, 404])('asks v3 once after turbo answers %i, and answers with its text and minutes', async status => {
+      fetchMock.mockResolvedValueOnce(groqError(status)).mockResolvedValueOnce(groqVerbose({ text: 'From v3.', duration: 7 }))
+
+      const res = await request(wav(7), { language: 'vi', model: 'whisper-large-v3' })
+
+      expect(res.status).toBe(200)
+      expect((await res.json()).text).toBe('From v3.')
+      expect(fetchMock).toHaveBeenCalledTimes(2)
+      expect(modelOf(0)).toBe('whisper-large-v3-turbo')
+      expect(modelOf(1)).toBe('whisper-large-v3')
+      expect((fetchMock.mock.calls[1][1].body as FormData).get('language')).toBe('vi')
+      expect(((fetchMock.mock.calls[1][1].body as FormData).get('file') as Blob).size).toBe(wav(7).length)
+      expect(await secondsUsed()).toBe(7)
+      expect(
+        lines(error).some(l => l.includes('"model":"whisper-large-v3-turbo"') && l.includes(`"status":${status}`) && l.includes('"retryWith":"whisper-large-v3"'))
+      ).toBe(true)
+    })
+
+    it('asks v3 after a network error or a timeout of turbo', async () => {
+      fetchMock
+        .mockRejectedValueOnce(Object.assign(new Error('timed out'), { name: 'TimeoutError' }))
+        .mockResolvedValueOnce(groqVerbose({ duration: 2 }))
+        .mockRejectedValueOnce(new TypeError('fetch failed'))
+        .mockResolvedValueOnce(groqVerbose({ duration: 2 }))
+
+      expect((await request(wav(2))).status).toBe(200)
+      expect((await request(wav(2))).status).toBe(200)
+
+      expect(fetchMock.mock.calls.map((_, i) => modelOf(i))).toEqual([
+        'whisper-large-v3-turbo',
+        'whisper-large-v3',
+        'whisper-large-v3-turbo',
+        'whisper-large-v3',
+      ])
+    })
+
+    it('does not ask v3 after an answer it would give too: a bad file, a file that is too large', async () => {
+      for (const status of [400, 413]) {
+        fetchMock.mockReset()
+        fetchMock.mockResolvedValue(groqError(status))
+        const res = await request(wav(2))
+        expect(res.status).toBe(status)
+        expect(fetchMock).toHaveBeenCalledTimes(1)
+      }
+      expect(await secondsUsed()).toBe(0)
+    })
+
+    it('when v3 fails too, answers its error once and records nothing', async () => {
+      fetchMock.mockResolvedValueOnce(groqError(503)).mockResolvedValueOnce(groqError(429))
+
+      const res = await request(wav(2))
+
+      expect(res.status).toBe(429)
+      expect(fetchMock).toHaveBeenCalledTimes(2)
+      expect(await secondsUsed()).toBe(0)
+      expect(
+        lines(error).some(
+          l => l.includes('"model":"whisper-large-v3"') && l.includes('"status":429') && l.includes('"fellBackFrom":{"model":"whisper-large-v3-turbo","status":503}')
+        )
+      ).toBe(true)
+    })
+
+    it('when v3 times out too, answers 503 and records nothing', async () => {
+      fetchMock
+        .mockResolvedValueOnce(groqError(500))
+        .mockRejectedValueOnce(Object.assign(new Error('timed out'), { name: 'TimeoutError' }))
+
+      const res = await request(wav(2))
+
+      expect(res.status).toBe(503)
+      expect(await res.json()).toEqual({ error: 'Transcription timed out' })
+      expect(await secondsUsed()).toBe(0)
+    })
+
+    it('logs the model that answered, and where it came from', async () => {
+      fetchMock.mockResolvedValueOnce(groqError(500)).mockResolvedValueOnce(groqVerbose({ duration: 2 }))
+
+      await request(wav(2))
+      await new Promise(resolve => setTimeout(resolve, 50))
+
+      const ok = lines(info).find(l => l.startsWith('[transcribe]') && l.includes('"status":200'))
+      expect(ok).toBeDefined()
+      const data = JSON.parse(ok!.slice('[transcribe] '.length))
+      expect(data).toMatchObject({ model: 'whisper-large-v3', fellBackFrom: { model: 'whisper-large-v3-turbo', status: 500 } })
+    })
   })
 
   it('answers in the format the app asked for', async () => {
