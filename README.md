@@ -281,7 +281,7 @@ More questions are answered on [the website](https://wispra-web.vercel.app), or 
 | UI | Tailwind CSS 3 |
 | Database and auth | Supabase (Postgres with row-level security, Supabase Auth) |
 | Speech and AI | Groq: Whisper for transcription, `openai/gpt-oss-120b` by default for AI text |
-| AI assistant link | Model Context Protocol (`@modelcontextprotocol/sdk`, `mcp-handler`) |
+| AI assistant link | Model Context Protocol (`@modelcontextprotocol/server` 2.x, `mcp-handler` 2.x) |
 | Billing | Polar (webhooks) |
 | Hosting | Vercel |
 | Tests | Vitest, with PGlite running the real migrations in an in-memory Postgres |
