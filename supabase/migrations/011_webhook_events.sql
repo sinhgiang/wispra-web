@@ -24,5 +24,7 @@ CREATE TABLE IF NOT EXISTS public.webhook_events (
   PRIMARY KEY (webhook_id)
 );
 
--- RLS with no policies: only the service role (server-side) can read/write.
+-- RLS with no policies and no grants for anon/authenticated: only the service
+-- role (server-side) can read/write.
 ALTER TABLE public.webhook_events ENABLE ROW LEVEL SECURITY;
+REVOKE ALL ON public.webhook_events FROM anon, authenticated;

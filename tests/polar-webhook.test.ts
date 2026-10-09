@@ -268,8 +268,7 @@ describe('POST /api/webhook/polar', () => {
   it('webhook_events is closed to signed-in users and visitors (RLS, no policy)', async () => {
     await deliver('msg_rls', subscription('subscription.created'))
     for (const role of ['anon', 'authenticated']) {
-      const rows = await queryAs<{ webhook_id: string }>(pg, role, 'SELECT webhook_id FROM public.webhook_events')
-      expect(rows.rows).toEqual([])
+      await expect(queryAs(pg, role, 'SELECT webhook_id FROM public.webhook_events')).rejects.toThrow()
       await expect(
         queryAs(pg, role, "INSERT INTO public.webhook_events (webhook_id) VALUES ('msg_fake')")
       ).rejects.toThrow()
