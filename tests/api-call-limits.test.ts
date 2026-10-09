@@ -321,6 +321,52 @@ describe('call limits on /api/transcribe and /api/chat/completions', () => {
     expect((await chatRequest('b-token')).status).toBe(200)
   })
 
+  it('lets an unlimited account past the per-minute and daily limits; a normal account still gets 429', async () => {
+    await pg.query('UPDATE public.subscriptions SET unlimited = true WHERE user_id = $1', [USER_A])
+    try {
+      for (const user of [USER_A, USER_B]) {
+        await setCalls(pg, user, 'transcribe', 'minute', API_CALL_LIMITS.transcribe.perMinute)
+        await setCalls(pg, user, 'transcribe', 'day', API_CALL_LIMITS.transcribe.perDay)
+        await setCalls(pg, user, 'chat', 'minute', API_CALL_LIMITS.chat.perMinute)
+        await setCalls(pg, user, 'chat', 'day', API_CALL_LIMITS.chat.perDay)
+      }
+
+      for (let i = 0; i < 3; i++) {
+        expect((await transcribeRequest('a-token')).status).toBe(200)
+        expect((await chatRequest('a-token')).status).toBe(200)
+      }
+      expect(fetchMock).toHaveBeenCalledTimes(6)
+
+      const refusedTranscribe = await transcribeRequest('b-token')
+      expect(refusedTranscribe.status).toBe(429)
+      expect((await refusedTranscribe.json()).code).toBe('rate_limited')
+      const refusedChat = await chatRequest('b-token')
+      expect(refusedChat.status).toBe(429)
+      expect((await refusedChat.json()).code).toBe('rate_limited')
+      expect(fetchMock).toHaveBeenCalledTimes(6)
+    } finally {
+      await pg.query('UPDATE public.subscriptions SET unlimited = false WHERE user_id = $1', [USER_A])
+    }
+  })
+
+  it('reads the unlimited flag only for a call over the limit', async () => {
+    const client = fakeSupabase(pg)
+    const from = vi.spyOn(client, 'from')
+    state.supabase = client
+
+    expect((await transcribeRequest('b-token')).status).toBe(200)
+    // Under the limit: the route reads subscriptions once for the monthly minutes, the counter not at all.
+    expect(from.mock.calls.filter(([table]) => table === 'subscriptions')).toHaveLength(1)
+
+    from.mockClear()
+    expect(await takeApiCall(client, USER_B, 'chat')).toEqual({ allowed: true })
+    expect(from).not.toHaveBeenCalled()
+
+    await setCalls(pg, USER_B, 'chat', 'minute', API_CALL_LIMITS.chat.perMinute)
+    expect((await takeApiCall(client, USER_B, 'chat')).allowed).toBe(false)
+    expect(from.mock.calls.map(([table]) => table)).toEqual(['subscriptions'])
+  })
+
   it('counts transcription and AI apart: a user over the transcription limit can still use AI', async () => {
     await setCalls(pg, USER_A, 'transcribe', 'minute', API_CALL_LIMITS.transcribe.perMinute)
 

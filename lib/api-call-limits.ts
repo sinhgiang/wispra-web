@@ -1,13 +1,15 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { NextResponse } from 'next/server'
+import { getAccount } from '@/lib/account'
 
 // ── How often one user may call the routes that spend the server's Groq key ───
 // Counted per user, per route, in clock windows (UTC): this minute and today.
-// Every plan has the same limits, unlimited accounts too: they are far above what
-// a person does by hand (one dictation sends its 30-second parts one after the
-// other; a long file is a few hundred parts), and only stop a script or a leaked
-// token from spending the shared key. Change the numbers here; nothing else needs
-// to be touched.
+// Every plan has the same limits: they are far above what a person does by hand
+// (one dictation sends its 30-second parts one after the other; a long file is a
+// few hundred parts), and only stop a script or a leaked token from spending the
+// shared key. Accounts marked unlimited (subscriptions.unlimited, migration 007:
+// the owner's own account) are never refused, as with the monthly minutes and AI
+// tokens. Change the numbers here; nothing else needs to be touched.
 export const API_CALL_LIMITS = {
   transcribe: { perMinute: 60, perDay: 2_000 },
   chat: { perMinute: 60, perDay: 3_000 },
@@ -27,6 +29,10 @@ const WHAT: Record<LimitedRoute, string> = { transcribe: 'transcription', chat: 
 /**
  * Counts one call by `userId` to `route` if the user is still under both limits
  * (take_api_call, migration 010), and says whether it may go on.
+ *
+ * A refused call is let through when the account is marked unlimited. The flag is
+ * read only then, so a call under the limit waits for nothing more. (Refused calls
+ * are not counted, so an unlimited account's count stops at the limit.)
  *
  * Fails open: if the count cannot be taken (database error, or migration 010 not
  * applied yet), the call is allowed and the reason logged. A broken counter must
@@ -51,6 +57,7 @@ export async function takeApiCall(
     }
     const result = data as { allowed?: unknown; period?: unknown; limit?: unknown; retry_after?: unknown } | null
     if (result?.allowed !== false) return { allowed: true }
+    if ((await getAccount(supabase, userId)).unlimited) return { allowed: true }
     const period = result.period === 'day' ? 'day' : 'minute'
     const retryAfter = Number(result.retry_after)
     return {

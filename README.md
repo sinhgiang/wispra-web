@@ -244,7 +244,8 @@ handled by [Polar](https://polar.sh). Both limits are set in one place in the co
 On every plan, Wispra Cloud also caps how many requests one account sends: 60 a minute and 2,000 a day for
 transcription (a 30-second part of a recording is one request), 60 a minute and 3,000 a day for AI text. Past it
 the server answers HTTP 429 with code `rate_limited`, the limit, and a `Retry-After` header; the desktop app waits
-out a per-minute limit by itself. The numbers are in `lib/api-call-limits.ts`.
+out a per-minute limit by itself. Accounts marked unlimited (`subscriptions.unlimited`) are not capped. The numbers
+are in `lib/api-call-limits.ts`.
 
 ## FAQ
 
