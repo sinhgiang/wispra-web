@@ -163,6 +163,9 @@ transcription and AI text go through this repository's server with Wispra's key.
 - **Clear answers when a limit is reached.** The server returns a distinct `ai_quota_exceeded` error with the limit,
   the amount used and the reset date, and the app shows it instead of failing. Dictation keeps working with the
   uncleaned transcript.
+- **A cap on requests, not on people.** Each account may send up to 60 transcription and 60 AI requests a minute,
+  and 2,000 transcription and 3,000 AI requests a day. A person never gets near it; a script or a leaked sign-in
+  does, and gets HTTP 429 with `Retry-After` until the minute or the day is over.
 - **A request is never cut off half-way.** Limits are checked before each request; one that is admitted always
   finishes.
 
@@ -181,7 +184,8 @@ rotated or revoked at any time; only a hash of it is stored on the server.
 - **Your own key: straight to the provider.** With a personal API key, audio and text go from your computer to the
   AI provider directly and never pass through Wispra's server.
 - **Wispra Cloud: passed through, not kept.** Audio and text sent through Wispra Cloud are forwarded to Groq and
-  the result returned; the server stores only usage counts (seconds transcribed, AI tokens used).
+  the result returned; the server stores only usage counts (seconds transcribed, AI tokens used, requests made this
+  minute and today).
 - **Synced data only when you turn sync on.** Nothing from History or Meetings reaches the server unless cloud sync
   is enabled.
 - **Per-account isolation.** Every table has row-level security; the server reads and writes on behalf of the
@@ -212,8 +216,8 @@ rotated or revoked at any time; only a hash of it is stored on the server.
 | Website | `app/page.tsx` | Landing page: features, who it is for, comparison, FAQ, download |
 | Updates | `app/updates` | One page per desktop release with its notes and screenshot; new releases come from GitHub by themselves |
 | Sign-in hand-off | `app/auth/callback`, `app/auth/relay` | Completes sign-in in the browser and hands the session back to the desktop app through the `wispra://` link |
-| Transcription | `app/api/transcribe` | Forwards audio to Groq with the server key; enforces the Free plan's monthly minutes |
-| AI text | `app/api/chat/completions` | Forwards chat completions to Groq with a whitelist of models; enforces the monthly AI allowance |
+| Transcription | `app/api/transcribe` | Forwards audio to Groq with the server key; enforces the Free plan's monthly minutes and the requests per minute and per day |
+| AI text | `app/api/chat/completions` | Forwards chat completions to Groq with a whitelist of models; enforces the monthly AI allowance and the requests per minute and per day |
 | Usage | `app/api/usage` | Plan, minutes and AI tokens used this month, limits and reset date, for the app's Account page |
 | Cloud sync | `app/api/sync` | Receives the app's History, Meetings and learned words |
 | AI assistant link | `app/api/mcp/token`, `app/api/mcp/[token]` | Creates, rotates and revokes the private link, and serves the read-only MCP endpoint behind it |
@@ -236,6 +240,12 @@ apply to **Wispra Cloud**, per account and per calendar month (UTC).
 Tokens count both what is sent to the AI and what it writes back, as reported by Groq. Pro is a subscription
 handled by [Polar](https://polar.sh). Both limits are set in one place in the code (`lib/ai-quota.ts` and
 `app/api/transcribe`).
+
+On every plan, Wispra Cloud also caps how many requests one account sends: 60 a minute and 2,000 a day for
+transcription (a 30-second part of a recording is one request), 60 a minute and 3,000 a day for AI text. Past it
+the server answers HTTP 429 with code `rate_limited`, the limit, and a `Retry-After` header; the desktop app waits
+out a per-minute limit by itself. Accounts marked unlimited (`subscriptions.unlimited`) are not capped. The numbers
+are in `lib/api-call-limits.ts`.
 
 ## FAQ
 
@@ -281,7 +291,7 @@ More questions are answered on [the website](https://wispra-web.vercel.app), or 
 | UI | Tailwind CSS 3 |
 | Database and auth | Supabase (Postgres with row-level security, Supabase Auth) |
 | Speech and AI | Groq: Whisper for transcription, `openai/gpt-oss-120b` by default for AI text |
-| AI assistant link | Model Context Protocol (`@modelcontextprotocol/sdk`, `mcp-handler`) |
+| AI assistant link | Model Context Protocol (`@modelcontextprotocol/server` 2.x, `mcp-handler` 2.x) |
 | Billing | Polar (webhooks) |
 | Hosting | Vercel |
 | Tests | Vitest, with PGlite running the real migrations in an in-memory Postgres |

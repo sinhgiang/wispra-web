@@ -47,12 +47,11 @@ async function handle(req: NextRequest, context: { params: Promise<{ token: stri
   }
   const userId = resolved.userId
 
-  const pathname = new URL(req.url).pathname
-  const mcpHandler = createMcpHandler(
-    (server) => registerTools(server, userId),
-    { serverInfo: { name: 'wispra-mcp', version: '0.1.0' } },
-    { streamableHttpEndpoint: pathname, disableSse: true }
-  )
+  // mcp-handler 2.x serves whatever route it is mounted at (no endpoint/SSE options) and
+  // answers stateless: GET/DELETE session operations get 405.
+  const mcpHandler = createMcpHandler((server) => registerTools(server, userId), {
+    serverInfo: { name: 'wispra-mcp', version: '0.1.0' }
+  })
   return mcpHandler(req)
 }
 
