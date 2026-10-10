@@ -216,7 +216,7 @@ rotated or revoked at any time; only a hash of it is stored on the server.
 | Website | `app/page.tsx` | Landing page: features, who it is for, comparison, FAQ, download |
 | Updates | `app/updates` | One page per desktop release with its notes and screenshot; new releases come from GitHub by themselves |
 | Sign-in hand-off | `app/auth/callback`, `app/auth/relay` | Completes sign-in in the browser and hands the session back to the desktop app through the `wispra://` link |
-| Transcription | `app/api/transcribe` | Forwards audio to Groq with the server key; enforces the Free plan's monthly minutes and the requests per minute and per day |
+| Transcription | `app/api/transcribe` | Forwards audio to Groq with the server key (`whisper-large-v3-turbo`, then `whisper-large-v3` if turbo fails); enforces the Free plan's monthly minutes and the requests per minute and per day |
 | AI text | `app/api/chat/completions` | Forwards chat completions to Groq with a whitelist of models; enforces the monthly AI allowance and the requests per minute and per day |
 | Usage | `app/api/usage` | Plan, minutes and AI tokens used this month, limits and reset date, for the app's Account page |
 | Cloud sync | `app/api/sync` | Receives the app's History, Meetings and learned words |

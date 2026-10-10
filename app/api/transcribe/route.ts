@@ -1,7 +1,16 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createAdminClient, validateToken, currentMonth } from '@/lib/supabase-server'
 import { getAccount } from '@/lib/account'
-import { allowedTranscribeModel, billedSeconds, groqDurationSeconds, wavDurationSeconds } from '@/lib/transcription'
+import {
+  billedSeconds,
+  FALLBACK_TRANSCRIBE_MODEL,
+  FALLBACK_TRANSCRIBE_TIMEOUT_MS,
+  groqDurationSeconds,
+  shouldTryFallbackModel,
+  TRANSCRIBE_MODEL,
+  TRANSCRIBE_TIMEOUT_MS,
+  wavDurationSeconds,
+} from '@/lib/transcription'
 import { cleanGroqError } from '@/lib/groq-errors'
 import { afterResponse } from '@/lib/after-response'
 import { rateLimitedResponse, takeApiCall } from '@/lib/api-call-limits'
@@ -79,41 +88,63 @@ export async function POST(req: NextRequest) {
     }
   }
 
-  // Passed on to Groq as sent, except: the model must be one we allow, and the
-  // answer is always verbose_json so the server can read how long the audio was.
+  // Passed on to Groq as sent, except: the model is always the server's choice
+  // (turbo, then v3 if turbo fails), and the answer is always verbose_json so the
+  // server can read how long the audio was.
   const asked = form.get('response_format')
   const wantsVerbose = asked === 'verbose_json'
-  const model = allowedTranscribeModel(form.get('model'))
-  const outgoing = new FormData()
-  for (const [name, value] of form.entries()) {
-    if (name === 'model' || name === 'response_format') continue
-    outgoing.append(name, value)
+  const outgoingFor = (model: string) => {
+    const outgoing = new FormData()
+    for (const [name, value] of form.entries()) {
+      if (name === 'model' || name === 'response_format') continue
+      outgoing.append(name, value)
+    }
+    outgoing.set('model', model)
+    outgoing.set('response_format', 'verbose_json')
+    return outgoing
   }
-  outgoing.set('model', model)
-  outgoing.set('response_format', 'verbose_json')
 
-  const log = { model, audioBytes: file.size, audioType: file.type || null }
+  const audio = { audioBytes: file.size, audioType: file.type || null }
   const groqStarted = Date.now()
-  let groqResponse: Response
-  try {
-    groqResponse = await fetch('https://api.groq.com/openai/v1/audio/transcriptions', {
-      method: 'POST',
-      headers: { Authorization: `Bearer ${process.env.GROQ_API_KEY}` },
-      body: outgoing,
-      signal: AbortSignal.timeout(30_000),
-    })
-  } catch (err) {
-    const timedOut = err instanceof Error && err.name === 'TimeoutError'
-    logTranscription({ ...log, status: timedOut ? 'timeout' : 'network-error', ms: { auth: authMs, body: bodyMs, db: dbMs, groq: since(groqStarted), total: since(started) } })
-    const msg = timedOut ? 'Transcription timed out' : 'Network error contacting transcription service'
-    return NextResponse.json({ error: msg }, { status: 503 })
-  }
+  const ms = () => ({ auth: authMs, body: bodyMs, db: dbMs, groq: since(groqStarted), total: since(started) })
 
-  if (!groqResponse.ok) {
-    const text = await groqResponse.text()
-    logTranscription({ ...log, status: groqResponse.status, ms: { auth: authMs, body: bodyMs, db: dbMs, groq: since(groqStarted), total: since(started) } })
-    return NextResponse.json({ error: cleanGroqError(text) }, { status: groqResponse.status })
+  let model: string = TRANSCRIBE_MODEL
+  let fellBackFrom: { model: string; status: number | string } | null = null
+  let groqResponse: Response
+  for (;;) {
+    const fallback = model === FALLBACK_TRANSCRIBE_MODEL
+    const attemptStarted = Date.now()
+    let failure: { status: number | string; response?: Response; error?: NextResponse } | null = null
+    try {
+      groqResponse = await fetch('https://api.groq.com/openai/v1/audio/transcriptions', {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${process.env.GROQ_API_KEY}` },
+        body: outgoingFor(model),
+        signal: AbortSignal.timeout(fallback ? FALLBACK_TRANSCRIBE_TIMEOUT_MS : TRANSCRIBE_TIMEOUT_MS),
+      })
+      if (groqResponse.ok) break
+      failure = { status: groqResponse.status, response: groqResponse }
+    } catch (err) {
+      const timedOut = err instanceof Error && err.name === 'TimeoutError'
+      const msg = timedOut ? 'Transcription timed out' : 'Network error contacting transcription service'
+      failure = { status: timedOut ? 'timeout' : 'network-error', error: NextResponse.json({ error: msg }, { status: 503 }) }
+    }
+
+    // Turbo failed in a way the other model may not: say so in the log and ask it once.
+    const failedStatus = typeof failure.status === 'number' ? failure.status : 503
+    if (!fallback && shouldTryFallbackModel(failedStatus)) {
+      await failure.response?.body?.cancel().catch(() => {})
+      logTranscription({ model, ...audio, status: failure.status, retryWith: FALLBACK_TRANSCRIBE_MODEL, ms: { ...ms(), groq: since(attemptStarted) } })
+      fellBackFrom = { model, status: failure.status }
+      model = FALLBACK_TRANSCRIBE_MODEL
+      continue
+    }
+
+    logTranscription({ model, ...audio, status: failure.status, ...(fellBackFrom ? { fellBackFrom } : {}), ms: ms() })
+    if (failure.error) return failure.error
+    return NextResponse.json({ error: cleanGroqError(await failure.response!.text()) }, { status: failedStatus })
   }
+  const log = { model, ...audio, ...(fellBackFrom ? { fellBackFrom } : {}) }
 
   const result = await groqResponse.json() as { text?: string; x_groq?: unknown }
   const groqMs = since(groqStarted)
