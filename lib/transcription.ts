@@ -2,12 +2,31 @@
 // Free plan's monthly minutes. The seconds are measured on the server (T-0201, C2):
 // a client that leaves out its own duration header no longer transcribes for free.
 
-/** Groq speech-to-text models clients may ask for; anything else gets the default. */
-export const TRANSCRIBE_MODELS = new Set(['whisper-large-v3-turbo', 'whisper-large-v3'])
-export const DEFAULT_TRANSCRIBE_MODEL = 'whisper-large-v3-turbo'
+/**
+ * The Groq speech-to-text model for every request (T-0281, the owner's choice
+ * W-0572): turbo, which measured about 0.3 to 0.5 s faster per call and as
+ * accurate or better (1.1% against 6.3% wrong words on noisy speech, T-0249).
+ * The server decides, whatever model the app asks for: the installed desktop app
+ * sends `whisper-large-v3` and is not updated at the same moment as the server.
+ */
+export const TRANSCRIBE_MODEL = 'whisper-large-v3-turbo'
 
-export function allowedTranscribeModel(requested: unknown): string {
-  return typeof requested === 'string' && TRANSCRIBE_MODELS.has(requested) ? requested : DEFAULT_TRANSCRIBE_MODEL
+/** Tried once when turbo fails in a way a second model can help with. */
+export const FALLBACK_TRANSCRIBE_MODEL = 'whisper-large-v3'
+
+/** How long turbo gets before the fallback is tried; a 30-second part normally takes under 3 s. */
+export const TRANSCRIBE_TIMEOUT_MS = 20_000
+export const FALLBACK_TRANSCRIBE_TIMEOUT_MS = 30_000
+
+/**
+ * Whether the other model is worth a try after Groq answered `status` for turbo:
+ * the model is unknown or gone (404), over its own rate limit (429; limits are
+ * counted per model), or Groq is failing (5xx). Not for a bad request, a bad key,
+ * a file that is too large or a blocked region: the same file would fail the same
+ * way on the other model.
+ */
+export function shouldTryFallbackModel(status: number): boolean {
+  return status === 404 || status === 429 || status >= 500
 }
 
 const ascii = (bytes: Uint8Array, at: number) => String.fromCharCode(...bytes.subarray(at, at + 4))

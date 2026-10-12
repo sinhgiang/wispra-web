@@ -148,7 +148,7 @@ describe('server side of the wait after stop', () => {
     })
 
     it('logs where the time went, with sizes and no text or user', async () => {
-      await transcribeRequest({ model: 'whisper-large-v3-turbo' })
+      await transcribeRequest({ model: 'whisper-large-v3' })
       await runScheduled()
 
       const line = info.mock.calls.map(c => String(c[0])).find(t => t.startsWith('[transcribe]'))
