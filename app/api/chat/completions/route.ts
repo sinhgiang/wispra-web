@@ -3,6 +3,7 @@ import { createAdminClient, validateToken } from '@/lib/supabase-server'
 import { AI_QUOTA_EXCEEDED_CODE, cappedMaxTokens, getAiQuotaStatus, recordAiTokens } from '@/lib/ai-quota'
 import { cleanGroqError } from '@/lib/groq-errors'
 import { afterResponse } from '@/lib/after-response'
+import { rateLimitedResponse, takeApiCall } from '@/lib/api-call-limits'
 
 const GROQ_CHAT_URL = 'https://api.groq.com/openai/v1/chat/completions'
 
@@ -173,6 +174,12 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'Invalid or expired token' }, { status: 401 })
   }
 
+  // ── Calls per minute and per day ────────────────────────────────────────────
+  // Counted while the body is read, and settled before anything else is checked,
+  // so a flood of bad requests is stopped too.
+  const supabase = createAdminClient()
+  const callTaken = takeApiCall(supabase, userId, 'chat')
+
   // ── Parse body ──────────────────────────────────────────────────────────────
   let body: {
     model?: string
@@ -182,10 +189,15 @@ export async function POST(req: NextRequest) {
     stream?: boolean
     response_format?: unknown
     reasoning_effort?: unknown
-  }
+  } | null = null
   try {
     body = await req.json()
-  } catch {
+  } catch { /* answered below, once the call is counted */ }
+
+  const call = await callTaken
+  if (!call.allowed) return rateLimitedResponse('chat', call)
+
+  if (!body || typeof body !== 'object') {
     return NextResponse.json({ error: 'Invalid JSON body' }, { status: 400 })
   }
 
@@ -205,7 +217,6 @@ export async function POST(req: NextRequest) {
   // Checked once, before the call. A request that is let in always runs to the
   // end, even if it takes the user past the limit; the next one is refused.
   // Accounts marked unlimited are never refused, but their tokens are counted.
-  const supabase = createAdminClient()
   const quota = await getAiQuotaStatus(supabase, userId)
   if (quota.exceeded && quota.limitTokens !== null) {
     const limit = quota.limitTokens.toLocaleString('en-US')

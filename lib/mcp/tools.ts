@@ -1,5 +1,5 @@
 import { z } from 'zod'
-import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
+import type { McpServer } from '@modelcontextprotocol/server'
 import { createAdminClient } from '@/lib/supabase-server'
 import { computeStats } from './stats'
 import { lexiconMode } from './lexiconMode'
@@ -45,9 +45,9 @@ export function registerTools(server: McpServer, userId: string): void {
     'list_meetings',
     {
       description: 'List recent synced meeting sessions (title, date, duration, status), newest first.',
-      inputSchema: {
+      inputSchema: z.object({
         limit: z.number().int().positive().optional().describe('Max sessions to return (default 20, max 50)')
-      }
+      })
     },
     async ({ limit }: { limit?: number }) => {
       const { data, error } = await supabase
@@ -74,9 +74,9 @@ export function registerTools(server: McpServer, userId: string): void {
     'get_meeting',
     {
       description: 'Get one synced meeting session in full, including its transcript segments.',
-      inputSchema: {
+      inputSchema: z.object({
         id: z.string().describe('The meeting session id')
-      }
+      })
     },
     async ({ id }: { id: string }) => {
       const { data, error } = await supabase
@@ -103,10 +103,10 @@ export function registerTools(server: McpServer, userId: string): void {
     'search_meetings',
     {
       description: 'Search synced meeting sessions by title, summary, or transcript text. Case-insensitive substring match.',
-      inputSchema: {
+      inputSchema: z.object({
         query: z.string().describe('Text to search for'),
         limit: z.number().int().positive().optional().describe('Max sessions to return (default 10, max 30)')
-      }
+      })
     },
     async ({ query, limit }: { query: string; limit?: number }) => {
       const { data, error } = await supabase
@@ -141,10 +141,10 @@ export function registerTools(server: McpServer, userId: string): void {
     {
       description:
         'Search synced dictation history by transcript text. Case-insensitive substring match against both the final text and the raw (pre-cleanup) text, newest first.',
-      inputSchema: {
+      inputSchema: z.object({
         query: z.string().describe('Text to search for'),
         limit: z.number().int().positive().optional().describe('Max entries to return (default 20, max 50)')
-      }
+      })
     },
     async ({ query, limit }: { query: string; limit?: number }) => {
       const { data, error } = await supabase
@@ -176,9 +176,9 @@ export function registerTools(server: McpServer, userId: string): void {
     'get_history_entry',
     {
       description: 'Get one synced dictation history entry in full by id.',
-      inputSchema: {
+      inputSchema: z.object({
         id: z.string().describe('The history entry id')
-      }
+      })
     },
     async ({ id }: { id: string }) => {
       const { data, error } = await supabase
