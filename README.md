@@ -217,7 +217,7 @@ rotated or revoked at any time; only a hash of it is stored on the server.
 | Usage | `app/api/usage` | Plan, minutes and AI tokens used this month, limits and reset date, for the app's Account page |
 | Cloud sync | `app/api/sync` | Receives the app's History, Meetings and learned words |
 | AI assistant link | `app/api/mcp/token`, `app/api/mcp/[token]` | Creates, rotates and revokes the private link, and serves the read-only MCP endpoint behind it |
-| Billing | `app/api/webhook/polar` | Verifies Polar subscription webhooks and updates the account's plan |
+| Billing | `app/api/webhook/polar`, `lib/polar-webhook.ts` | Verifies Polar subscription webhooks (Standard Webhooks signature, 5-minute window), applies each delivery once (`webhook_events`, migration 011) and updates the account's plan |
 | Database | `supabase/migrations` | Tables, row-level security and the functions that count usage |
 
 The desktop app itself lives in a separate repository; its downloads and release notes are at

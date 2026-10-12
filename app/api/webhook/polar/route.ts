@@ -1,5 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server'
+import type { SupabaseClient } from '@supabase/supabase-js'
 import { createAdminClient } from '@/lib/supabase-server'
+import { serverError } from '@/lib/api-errors'
+import { isMissingTable } from '@/lib/history-deletions'
+import { verifyPolarWebhook } from '@/lib/polar-webhook'
 
 interface PolarEvent {
   type: string
@@ -13,81 +17,95 @@ interface PolarEvent {
   }
 }
 
-async function verifySignature(req: NextRequest, body: string): Promise<boolean> {
-  const secret = process.env.POLAR_WEBHOOK_SECRET
-  if (!secret) return false
+type Claim = 'claimed' | 'duplicate' | 'unrecorded'
 
-  const signature = req.headers.get('webhook-signature') ?? req.headers.get('x-polar-signature')
-  if (!signature) return false
-
-  const key = await crypto.subtle.importKey(
-    'raw',
-    new TextEncoder().encode(secret),
-    { name: 'HMAC', hash: 'SHA-256' },
-    false,
-    ['verify']
-  )
-
-  const sigBytes = hexToBytes(signature.replace(/^sha256=/, ''))
-  const bodyBytes = new TextEncoder().encode(body)
-  // Cast needed: Node 22 Uint8Array<ArrayBufferLike> vs WebCrypto BufferSource<ArrayBuffer>
-  return crypto.subtle.verify('HMAC', key, sigBytes.buffer as ArrayBuffer, bodyBytes.buffer as ArrayBuffer)
+/**
+ * Records the delivery's webhook-id before the event is applied. Polar resends
+ * the same id on every retry, so a second delivery finds the row and is skipped.
+ * Before migration 011 is applied the table is missing and events are applied
+ * without the record (the 5-minute timestamp window still refuses old replays).
+ */
+async function claimDelivery(supabase: SupabaseClient, webhookId: string, type: string): Promise<Claim | { error: unknown }> {
+  const { error } = await supabase.from('webhook_events').insert({ webhook_id: webhookId, source: 'polar', event_type: type })
+  if (!error) return 'claimed'
+  if (error.code === '23505') return 'duplicate'
+  if (isMissingTable(error)) {
+    console.warn('[webhook/polar] webhook_events table missing (migration 011): applying without the duplicate check')
+    return 'unrecorded'
+  }
+  return { error }
 }
 
-function hexToBytes(hex: string): Uint8Array {
-  const arr = new Uint8Array(hex.length / 2)
-  for (let i = 0; i < hex.length; i += 2) {
-    arr[i / 2] = parseInt(hex.slice(i, i + 2), 16)
+async function findUserIdByEmail(supabase: SupabaseClient, email: string): Promise<{ id: string | null } | { error: unknown }> {
+  const { data, error } = await supabase.auth.admin.listUsers()
+  if (error) return { error }
+  return { id: data?.users?.find(u => u.email === email)?.id ?? null }
+}
+
+/** Applies one event to the subscriptions table. Returns an error to have Polar retry. */
+async function applyEvent(supabase: SupabaseClient, event: PolarEvent): Promise<{ error: unknown } | null> {
+  // Polar event types: subscription.created, subscription.updated, subscription.canceled
+  const handled = ['subscription.created', 'subscription.updated', 'subscription.canceled']
+  if (!handled.includes(event.type)) return null
+
+  const email = event.data?.customer_email
+  if (!email) return null
+
+  const found = await findUserIdByEmail(supabase, email)
+  if ('error' in found) return found
+  if (!found.id) return null
+
+  if (event.type === 'subscription.canceled') {
+    const { error } = await supabase
+      .from('subscriptions')
+      .update({ plan: 'free', updated_at: new Date().toISOString() })
+      .eq('user_id', found.id)
+    return error ? { error } : null
   }
-  return arr
+
+  const { error } = await supabase
+    .from('subscriptions')
+    .upsert({
+      user_id: found.id,
+      plan: event.data.status === 'active' ? 'pro' : 'free',
+      polar_subscription_id: event.data.id,
+      polar_customer_id: event.data.customer_id,
+      current_period_end: event.data.current_period_end ?? null,
+      updated_at: new Date().toISOString(),
+    }, { onConflict: 'user_id' })
+  return error ? { error } : null
 }
 
 export async function POST(req: NextRequest) {
   const body = await req.text()
 
-  const valid = await verifySignature(req, body)
-  if (!valid) {
+  const check = verifyPolarWebhook(req.headers, body, process.env.POLAR_WEBHOOK_SECRET)
+  if (!check.ok) {
+    console.warn(`[webhook/polar] refused: ${check.reason}`)
     return NextResponse.json({ error: 'Invalid signature' }, { status: 401 })
   }
 
-  const event = JSON.parse(body) as PolarEvent
-  const supabase = createAdminClient()
-
-  // Polar event types: subscription.created, subscription.updated, subscription.canceled
-  if (event.type === 'subscription.created' || event.type === 'subscription.updated') {
-    const isActive = event.data.status === 'active'
-    const email = event.data.customer_email
-    if (!email) return NextResponse.json({ ok: true })
-
-    // Find user by email
-    const { data: users } = await supabase.auth.admin.listUsers()
-    const user = users?.users?.find(u => u.email === email)
-    if (!user) return NextResponse.json({ ok: true })
-
-    await supabase
-      .from('subscriptions')
-      .upsert({
-        user_id: user.id,
-        plan: isActive ? 'pro' : 'free',
-        polar_subscription_id: event.data.id,
-        polar_customer_id: event.data.customer_id,
-        current_period_end: event.data.current_period_end ?? null,
-        updated_at: new Date().toISOString(),
-      }, { onConflict: 'user_id' })
+  let event: PolarEvent
+  try {
+    event = JSON.parse(body) as PolarEvent
+  } catch {
+    return NextResponse.json({ error: 'Invalid body' }, { status: 400 })
+  }
+  if (!event || typeof event.type !== 'string') {
+    return NextResponse.json({ error: 'Invalid body' }, { status: 400 })
   }
 
-  if (event.type === 'subscription.canceled') {
-    const email = event.data.customer_email
-    if (!email) return NextResponse.json({ ok: true })
+  const supabase = createAdminClient()
 
-    const { data: users } = await supabase.auth.admin.listUsers()
-    const user = users?.users?.find(u => u.email === email)
-    if (!user) return NextResponse.json({ ok: true })
+  const claim = await claimDelivery(supabase, check.id, event.type)
+  if (typeof claim === 'object') return serverError('Could not record the webhook', claim.error)
+  if (claim === 'duplicate') return NextResponse.json({ ok: true, duplicate: true })
 
-    await supabase
-      .from('subscriptions')
-      .update({ plan: 'free', updated_at: new Date().toISOString() })
-      .eq('user_id', user.id)
+  const failed = await applyEvent(supabase, event)
+  if (failed) {
+    // Forget the delivery so Polar's retry (same webhook-id) is applied.
+    if (claim === 'claimed') await supabase.from('webhook_events').delete().eq('webhook_id', check.id)
+    return serverError('Could not apply the webhook', failed.error)
   }
 
   return NextResponse.json({ ok: true })
