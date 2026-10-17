@@ -16,6 +16,7 @@
 ## Run and check
 
 - Open it: `npm install`, then `npm run dev` and open http://localhost:3000. The API routes need the keys in `.env.local` (names in `.env.example`); never print them. A pushed branch also gets a Vercel preview at `https://wispra-web-*.vercel.app`.
+- CI: `.github/workflows/ci.yml` runs `npm ci`, `npx tsc --noEmit` and `npm test` on every pull request (not for changes to `*.md` or `docs/` only). It does not run `next build`; Vercel builds each pull request.
 - Test account: none recorded. The automated tests (`npm test`) run every API route against the real migrations in PGlite with made-up users, so no real login is needed for them. A remote-MCP check by hand needs a link made from a throwaway account in the app.
 - Main flow to go through: open `/`, open `/updates` and one version page; for the MCP endpoint, a POST `tools/list` to `/api/mcp/<link>` answers the 7 tools, and an unknown link answers 403.
 - Screenshot: the Helme browser (mcp__helme-browser__take_screenshot) on localhost or the branch's Vercel preview.
