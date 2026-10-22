@@ -16,6 +16,8 @@ export interface Release {
   new?: string[]
   improved?: string[]
   fixed?: string[]
+  /** Shown last as "Good to know": limits or behaviour worth knowing, not a change. */
+  notes?: string[]
   /** What the screenshot shows, for screen readers. */
   imageAlt: string
 }
