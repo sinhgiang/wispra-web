@@ -27,7 +27,7 @@ function atLeast(version: string, minimum: string): boolean {
 
 describe('dependencies are past the published fixes', () => {
   it.each([
-    ['next', '15.5.24'], // GHSA-2xp9-vwfh-vxw4, GHSA-p293-qw3h-jr36 and the 15.5.21 fixes
+    ['next', '15.5.28'], // GHSA-2464-fhr4-w9xw (image optimizer SVG RCE), GHSA-p3m5-59mp-jv5r (Server Actions DoS); npm audit clean from 15.5.28
     ['react', '19.2.3'],
     ['react-dom', '19.2.3'],
     ['postcss', '8.5.23'], // GHSA-6g55-p6wh-862q, GHSA-fxqj-rqcc-2cmp, GHSA-r28c-9q8g-f849
@@ -41,7 +41,8 @@ describe('dependencies are past the published fixes', () => {
 
   it('the version check itself tells old from new', () => {
     expect(atLeast('15.5.19', '15.5.24')).toBe(false)
-    expect(atLeast('15.5.27', '15.5.24')).toBe(true)
+    expect(atLeast('15.5.27', '15.5.28')).toBe(false)
+    expect(atLeast('15.5.28', '15.5.28')).toBe(true)
     expect(atLeast('8.4.31', '8.5.23')).toBe(false)
     expect(atLeast('16.0.0', '15.5.24')).toBe(true)
   })
