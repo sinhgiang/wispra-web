@@ -12,6 +12,7 @@ import {
   wavDurationSeconds,
 } from '@/lib/transcription'
 import { cleanGroqError } from '@/lib/groq-errors'
+import { allowedLanguages, guessedOutsideSet, languageCode, preferSecondTry } from '@/lib/language-guard'
 import { afterResponse } from '@/lib/after-response'
 import { rateLimitedResponse, takeApiCall } from '@/lib/api-call-limits'
 
@@ -89,18 +90,21 @@ export async function POST(req: NextRequest) {
   }
 
   // Passed on to Groq as sent, except: the model is always the server's choice
-  // (turbo, then v3 if turbo fails), and the answer is always verbose_json so the
-  // server can read how long the audio was.
+  // (turbo, then v3 if turbo fails), the answer is always verbose_json so the
+  // server can read how long the audio was, and `languages` (the languages the
+  // user dictates in, read here for the language guard) is not Groq's business.
   const asked = form.get('response_format')
   const wantsVerbose = asked === 'verbose_json'
-  const outgoingFor = (model: string) => {
+  const outgoingFor = (model: string, language?: string) => {
     const outgoing = new FormData()
     for (const [name, value] of form.entries()) {
-      if (name === 'model' || name === 'response_format') continue
+      if (name === 'model' || name === 'response_format' || name === 'languages') continue
+      if (name === 'language' && language) continue
       outgoing.append(name, value)
     }
     outgoing.set('model', model)
     outgoing.set('response_format', 'verbose_json')
+    if (language) outgoing.set('language', language)
     return outgoing
   }
 
@@ -146,7 +150,41 @@ export async function POST(req: NextRequest) {
   }
   const log = { model, ...audio, ...(fellBackFrom ? { fellBackFrom } : {}) }
 
-  const result = await groqResponse.json() as { text?: string; x_groq?: unknown }
+  let result = await groqResponse.json() as { text?: string; x_groq?: unknown; language?: string }
+
+  // Language guard (T-1059). With no `language` from the app Whisper guesses it, and
+  // on a short or fast phrase it can guess a language nobody here speaks. Then the
+  // same audio is sent once more with the language fixed (the one the user uses
+  // most), and the better answer is kept. A normal answer costs no second call; a
+  // second call that fails leaves the first answer as it was. The seconds counted
+  // below are those of the one recording, whichever answer is kept.
+  let languageRetry: { from: string; to: string; used: boolean } | null = null
+  const sentLanguage = form.get('language')
+  const languageSet = typeof sentLanguage === 'string' && sentLanguage !== '' && sentLanguage !== 'auto'
+  if (!languageSet) {
+    const allowed = allowedLanguages(form.get('languages'))
+    if (guessedOutsideSet(result.language, allowed)) {
+      const to = allowed[0]
+      languageRetry = { from: languageCode(result.language), to, used: false }
+      try {
+        const again = await fetch('https://api.groq.com/openai/v1/audio/transcriptions', {
+          method: 'POST',
+          headers: { Authorization: `Bearer ${process.env.GROQ_API_KEY}` },
+          body: outgoingFor(model, to),
+          signal: AbortSignal.timeout(model === FALLBACK_TRANSCRIBE_MODEL ? FALLBACK_TRANSCRIBE_TIMEOUT_MS : TRANSCRIBE_TIMEOUT_MS),
+        })
+        if (again.ok) {
+          const second = (await again.json()) as typeof result
+          if (preferSecondTry(result, second)) {
+            result = second
+            languageRetry.used = true
+          }
+        } else {
+          await again.body?.cancel().catch(() => {})
+        }
+      } catch { /* the first answer stands */ }
+    }
+  }
   const groqMs = since(groqStarted)
 
   // Seconds are measured here. The client's x-audio-duration-seconds header is
@@ -172,6 +210,7 @@ export async function POST(req: NextRequest) {
     }
     logTranscription({
       ...log,
+      ...(languageRetry ? { languageRetry } : {}),
       status: 200,
       seconds,
       ms: { auth: authMs, body: bodyMs, db: dbMs, groq: groqMs, total: totalMs, recordAfter: since(recordStarted) },
